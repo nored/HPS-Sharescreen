@@ -3,8 +3,18 @@ set -e
 
 cd /build/wpewebkit-2.44.4
 
+# Detect architecture for lib dir and .deb
+DPKG_ARCH=$(dpkg --print-architecture)
+if [ "$DPKG_ARCH" = "armhf" ]; then
+  LIB_DIR="lib/arm-linux-gnueabihf"
+else
+  LIB_DIR="lib/aarch64-linux-gnu"
+fi
+
 echo "========================================="
 echo "  Building WPE WebKit with WebRTC"
+echo "  Architecture: ${DPKG_ARCH}"
+echo "  Lib dir: ${LIB_DIR}"
 echo "========================================="
 
 mkdir -p build && cd build
@@ -12,7 +22,7 @@ mkdir -p build && cd build
 cmake .. -GNinja \
   -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_INSTALL_PREFIX=/usr \
-  -DCMAKE_INSTALL_LIBDIR=lib/aarch64-linux-gnu \
+  -DCMAKE_INSTALL_LIBDIR=${LIB_DIR} \
   -DPORT=WPE \
   -DENABLE_WEB_RTC=ON \
   -DENABLE_MEDIA_SOURCE=ON \
@@ -29,10 +39,9 @@ cmake .. -GNinja \
   -DUSE_WPE_RENDERER=ON
 
 echo ""
-echo "Starting build... this will take a while."
+echo "Starting build with $(nproc) cores..."
 echo ""
 
-# Use all available cores
 ninja -j$(nproc)
 
 echo ""
@@ -40,27 +49,23 @@ echo "========================================="
 echo "  Build complete! Creating .deb package"
 echo "========================================="
 
-# Install to staging directory and create .deb
-DESTDIR=/build/pkg ninja install
-
-# Create .deb with checkinstall
 checkinstall --install=no \
   --pkgname=wpewebkit-webrtc \
   --pkgversion=2.44.4 \
   --pkgrelease=1 \
-  --arch=arm64 \
+  --arch=${DPKG_ARCH} \
   --maintainer="HPS-ShareScreen" \
   --provides="libwpewebkit-2.0-dev" \
-  --requires="libwpe-1.0-1,libwpebackend-fdo-1.0-1,libgstreamer1.0-0,gstreamer1.0-nice,gstreamer1.0-plugins-bad,libnice10,libopus0,libvpx7,libsrtp2-1" \
+  --requires="libwpe-1.0-1,libwpebackend-fdo-1.0-1,libgstreamer1.0-0,gstreamer1.0-nice,gstreamer1.0-plugins-bad,libnice10,libopus0,libvpx7,libsrtp2-1,libegl-mesa0,libgles2" \
   --default \
   ninja install
 
-# Copy .deb to output
-cp /build/wpewebkit-2.44.4/build/*.deb /output/ 2>/dev/null || \
-  cp /build/*.deb /output/ 2>/dev/null || \
-  echo "NOTE: .deb is at $(find /build -name '*.deb' -print -quit)"
+cp *.deb /output/ 2>/dev/null || \
+  cp /build/*.deb /output/ 2>/dev/null || true
 
 echo ""
 echo "========================================="
-echo "  Done! .deb package in /output/"
+echo "  Done!"
+echo "  .deb: $(find /build -name '*.deb' -print -quit)"
 echo "========================================="
+ls -lh /output/*.deb 2>/dev/null

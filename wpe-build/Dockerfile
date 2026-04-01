@@ -1,8 +1,20 @@
-FROM --platform=linux/arm64 debian:bookworm
+# Build WPE WebKit with WebRTC for ARM
+#
+# For Pi Zero 2 W (armhf/32-bit):
+#   docker build --build-arg ARCH=armhf -t wpe-webrtc .
+#
+# For Pi 3/4/5 (arm64):
+#   docker build --build-arg ARCH=arm64 -t wpe-webrtc .
+#
+# Building ON a Pi 5 (native, no QEMU):
+#   docker build --build-arg ARCH=arm64 -t wpe-webrtc .
+#   docker build --build-arg ARCH=armhf -t wpe-webrtc-armhf .
+
+ARG ARCH=armhf
+FROM --platform=linux/${ARCH} debian:bookworm
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# All build + runtime dependencies for WPE WebKit with WebRTC
 RUN apt-get update && apt-get install -y \
     build-essential cmake ninja-build pkg-config \
     git python3 ruby gperf unifdef \
@@ -11,7 +23,6 @@ RUN apt-get update && apt-get install -y \
     libwpebackend-fdo-1.0-dev \
     libglib2.0-dev \
     libsoup-3.0-dev \
-    libjavascriptcoregtk-6.0-dev \
     \
     libgstreamer1.0-dev \
     libgstreamer-plugins-base1.0-dev \
@@ -67,7 +78,6 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /build
 
-# Download WPE WebKit 2.44.4 source
 RUN curl -L https://wpewebkit.org/releases/wpewebkit-2.44.4.tar.xz | tar xJ
 
 COPY build.sh /build/build.sh
