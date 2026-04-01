@@ -25,7 +25,7 @@ echo ""
 # --- Install cog (WPE WebKit kiosk browser) ---
 echo "[1/5] Installing cog..."
 apt-get update -qq
-apt-get install -y cog libegl1-mesa libgles2-mesa
+apt-get install -y cog libegl-mesa0 libgles2
 
 # --- Boot config ---
 echo "[2/5] Configuring boot..."
