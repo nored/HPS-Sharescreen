@@ -11,6 +11,10 @@ const io = new Server(server, {
 
 const PORT = process.env.PORT || 3000;
 const BASE_URL = process.env.BASE_URL || 'https://share.hotel-park-soltau.de';
+const TURN_HOST = process.env.TURN_HOST || 'share.hotel-park-soltau.de';
+const TURN_PORT = process.env.TURN_PORT || '3478';
+const TURN_USER = process.env.TURN_USER || 'sharescreen';
+const TURN_PASS = process.env.TURN_PASS || 'hotelparkshare2024';
 
 // Rooms configured via environment variable (comma-separated)
 const ROOMS = (process.env.ROOMS || 'Kiel,Hamburg,Bremen').split(',').map(r => r.trim());
@@ -20,6 +24,20 @@ app.use(express.static(path.join(__dirname, 'public')));
 // API: list available rooms
 app.get('/api/rooms', (req, res) => {
   res.json(ROOMS);
+});
+
+// API: ICE server configuration (STUN + TURN)
+app.get('/api/ice-config', (req, res) => {
+  res.json({
+    iceServers: [
+      { urls: `stun:${TURN_HOST}:${TURN_PORT}` },
+      {
+        urls: `turn:${TURN_HOST}:${TURN_PORT}`,
+        username: TURN_USER,
+        credential: TURN_PASS
+      }
+    ]
+  });
 });
 
 // Display page (Raspberry Pi) - serves for any configured room
