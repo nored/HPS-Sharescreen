@@ -123,10 +123,23 @@
       background: #000;
     }
 
-    #video-screen.active {
+    #video-screen.active, #image-screen.active {
       display: flex;
       align-items: center;
       justify-content: center;
+    }
+
+    #image-screen {
+      display: none;
+      width: 100vw;
+      height: 100vh;
+      background: #000;
+    }
+
+    #shared-image {
+      max-width: 100%;
+      max-height: 100%;
+      object-fit: contain;
     }
 
     #remote-video {
@@ -203,6 +216,10 @@
     <video id="remote-video" autoplay playsinline></video>
   </div>
 
+  <div id="image-screen">
+    <img id="shared-image" src="" alt="Geteiltes Bild">
+  </div>
+
   <!-- QR Code library -->
   <script src="/qrious.min.js"></script>
 
@@ -269,6 +286,15 @@
       }
     });
 
+    socket.on('image-share', ({ image }) => {
+      document.getElementById('shared-image').src = image;
+      document.getElementById('idle-screen').classList.add('hidden');
+      document.getElementById('video-screen').classList.remove('active');
+      document.getElementById('image-screen').classList.add('active');
+      document.getElementById('status-dot').className = 'status-dot streaming';
+      document.getElementById('status-text').textContent = 'Bild wird angezeigt';
+    });
+
     socket.on('sharing-stopped', () => {
       stopViewing();
     });
@@ -291,6 +317,8 @@
       document.getElementById('remote-video').srcObject = null;
       document.getElementById('idle-screen').classList.remove('hidden');
       document.getElementById('video-screen').classList.remove('active');
+      document.getElementById('image-screen').classList.remove('active');
+      document.getElementById('shared-image').src = '';
       document.getElementById('status-dot').className = 'status-dot';
       document.getElementById('status-text').textContent = 'Warte auf Verbindung...';
     }

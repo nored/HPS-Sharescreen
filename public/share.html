@@ -99,6 +99,20 @@
 
     .btn-stop:hover { background: #b71c1c; }
 
+    .btn-secondary {
+      background: transparent;
+      color: var(--primary);
+      border: 2px solid var(--primary);
+    }
+
+    .btn-secondary:hover { background: rgba(149,163,33,0.08); }
+
+    .btn-camera {
+      background: #546e7a;
+    }
+
+    .btn-camera:hover { background: #455a64; }
+
     .icon {
       width: 64px;
       height: 64px;
@@ -112,6 +126,7 @@
     .icon-share { background: rgba(149,163,33,0.15); }
     .icon-active { background: rgba(76,175,80,0.15); }
     .icon-error { background: rgba(211,47,47,0.15); }
+    .icon-mobile { background: rgba(149,163,33,0.15); }
 
     .hint {
       font-size: 0.9rem;
@@ -147,6 +162,81 @@
       font-size: 0.85rem;
       color: #e65100;
     }
+
+    .url-box {
+      background: #f5f5f3;
+      border: 1px solid #ddd;
+      border-radius: 10px;
+      padding: 14px 18px;
+      font-size: 0.95rem;
+      word-break: break-all;
+      color: var(--dark);
+      font-weight: 500;
+      width: 100%;
+      text-align: center;
+    }
+
+    .copied-toast {
+      background: var(--primary);
+      color: #fff;
+      padding: 6px 16px;
+      border-radius: 8px;
+      font-size: 0.85rem;
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+
+    .copied-toast.show { opacity: 1; }
+
+    .divider {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      width: 100%;
+      color: #aaa;
+      font-size: 0.85rem;
+    }
+
+    .divider::before, .divider::after {
+      content: '';
+      flex: 1;
+      border-top: 1px solid #ddd;
+    }
+
+    .upload-area {
+      width: 100%;
+      border: 2px dashed #ccc;
+      border-radius: 12px;
+      padding: 24px;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+    }
+
+    .upload-area:hover {
+      border-color: var(--primary);
+      background: rgba(149,163,33,0.04);
+    }
+
+    .upload-area input {
+      display: none;
+    }
+
+    .upload-hint {
+      font-size: 0.85rem;
+      color: #aaa;
+    }
+
+    .image-preview {
+      width: 100%;
+      border-radius: 8px;
+      overflow: hidden;
+      background: #000;
+    }
+
+    .image-preview img {
+      width: 100%;
+      display: block;
+    }
   </style>
 </head>
 <body>
@@ -158,8 +248,8 @@
     <div class="room-badge" id="room-badge"></div>
 
     <div class="card">
-      <!-- State: Ready to share -->
-      <div class="state active" id="state-ready">
+      <!-- State: Desktop ready to share -->
+      <div class="state" id="state-ready">
         <div class="icon icon-share">
           <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#95a321" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
@@ -172,10 +262,41 @@
         <div class="no-display-warning" id="no-display-warning" style="display:none">
           Das Display in diesem Raum ist derzeit nicht verbunden. Sie k&ouml;nnen trotzdem starten &ndash; die &Uuml;bertragung beginnt, sobald das Display verf&uuml;gbar ist.
         </div>
-        <button class="btn" id="btn-share" onclick="startSharing()">Bildschirm freigeben</button>
+        <button class="btn" onclick="startSharing()">Bildschirm freigeben</button>
       </div>
 
-      <!-- State: Sharing active -->
+      <!-- State: Mobile landing -->
+      <div class="state" id="state-mobile">
+        <div class="icon icon-mobile">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#95a321" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="5" y="2" width="14" height="20" rx="2" ry="2"></rect>
+            <line x1="12" y1="18" x2="12.01" y2="18"></line>
+          </svg>
+        </div>
+        <h1>Bildschirm teilen</h1>
+        <p class="hint">Die Bildschirmfreigabe funktioniert am besten vom Laptop. &Ouml;ffnen Sie diesen Link auf Ihrem Laptop:</p>
+        <div class="url-box" id="share-url-box"></div>
+        <button class="btn" onclick="copyLink()">Link kopieren</button>
+        <span class="copied-toast" id="copied-toast">Link kopiert!</span>
+
+        <div class="divider">oder</div>
+
+        <p class="hint">Teilen Sie ein Foto oder Ihre Kamera direkt vom Handy:</p>
+        <button class="btn btn-camera" onclick="startCamera()">Kamera freigeben</button>
+
+        <div class="upload-area" onclick="document.getElementById('file-input').click()">
+          <input type="file" id="file-input" accept="image/*" onchange="uploadImage(event)">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#aaa" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom:8px">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="17 8 12 3 7 8"></polyline>
+            <line x1="12" y1="3" x2="12" y2="15"></line>
+          </svg>
+          <div class="hint">Bild hochladen</div>
+          <div class="upload-hint">Tippen um ein Bild auszuw&auml;hlen</div>
+        </div>
+      </div>
+
+      <!-- State: Sharing active (screen or camera) -->
       <div class="state" id="state-sharing">
         <div class="icon icon-active">
           <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#4CAF50" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -183,11 +304,26 @@
             <polyline points="22 4 12 14.01 9 11.01"></polyline>
           </svg>
         </div>
-        <div class="status-text">Bildschirm wird geteilt</div>
+        <div class="status-text" id="sharing-label">Bildschirm wird geteilt</div>
         <div class="preview-container">
           <video id="preview-video" autoplay playsinline muted></video>
         </div>
         <button class="btn btn-stop" onclick="stopSharing()">Freigabe beenden</button>
+      </div>
+
+      <!-- State: Image shared -->
+      <div class="state" id="state-image">
+        <div class="icon icon-active">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#4CAF50" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+            <polyline points="22 4 12 14.01 9 11.01"></polyline>
+          </svg>
+        </div>
+        <div class="status-text">Bild wird angezeigt</div>
+        <div class="image-preview">
+          <img id="image-preview-img" src="" alt="Vorschau">
+        </div>
+        <button class="btn btn-stop" onclick="stopImageSharing()">Anzeige beenden</button>
       </div>
 
       <!-- State: Error -->
@@ -208,7 +344,19 @@
 
   <script>
     const room = window.location.pathname.split('/')[1];
+    const shareUrl = window.location.href;
     document.getElementById('room-badge').textContent = `Raum ${room}`;
+    document.getElementById('share-url-box').textContent = shareUrl;
+
+    // Detect mobile
+    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+
+    // Show correct initial state
+    if (isMobile) {
+      showState('mobile');
+    } else {
+      showState('ready');
+    }
 
     const socket = io();
     let pc = null;
@@ -217,7 +365,8 @@
     socket.emit('join', { room, type: 'sharer' });
 
     socket.on('room-status', ({ hasDisplay }) => {
-      document.getElementById('no-display-warning').style.display = hasDisplay ? 'none' : 'block';
+      const warning = document.getElementById('no-display-warning');
+      if (warning) warning.style.display = hasDisplay ? 'none' : 'block';
     });
 
     socket.on('ready', () => {
@@ -236,6 +385,7 @@
       }
     });
 
+    // --- Desktop: Screen sharing ---
     async function startSharing() {
       try {
         stream = await navigator.mediaDevices.getDisplayMedia({
@@ -243,16 +393,14 @@
           audio: true
         });
 
-        // Show preview
         document.getElementById('preview-video').srcObject = stream;
+        document.getElementById('sharing-label').textContent = 'Bildschirm wird geteilt';
         showState('sharing');
 
-        // Handle user stopping via browser UI
         stream.getVideoTracks()[0].onended = () => {
           stopSharing();
         };
 
-        // If display is already connected, send offer immediately
         sendOffer();
       } catch (err) {
         if (err.name === 'NotAllowedError') {
@@ -263,6 +411,74 @@
       }
     }
 
+    // --- Mobile: Camera sharing ---
+    async function startCamera() {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } },
+          audio: false
+        });
+
+        document.getElementById('preview-video').srcObject = stream;
+        document.getElementById('sharing-label').textContent = 'Kamera wird geteilt';
+        showState('sharing');
+
+        stream.getVideoTracks()[0].onended = () => {
+          stopSharing();
+        };
+
+        sendOffer();
+      } catch (err) {
+        if (err.name === 'NotAllowedError') {
+          showError('Kamerazugriff wurde abgelehnt. Bitte erlauben Sie den Zugriff in Ihren Browsereinstellungen.');
+        } else {
+          showError('Kamerazugriff nicht m\u00f6glich. Bitte pr\u00fcfen Sie Ihre Browsereinstellungen.');
+        }
+      }
+    }
+
+    // --- Mobile: Image upload ---
+    function uploadImage(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const dataUrl = e.target.result;
+        document.getElementById('image-preview-img').src = dataUrl;
+        showState('image');
+
+        // Send image via socket to display
+        socket.emit('image-share', { room, image: dataUrl });
+      };
+      reader.readAsDataURL(file);
+    }
+
+    function stopImageSharing() {
+      socket.emit('stop-sharing');
+      document.getElementById('file-input').value = '';
+      showState(isMobile ? 'mobile' : 'ready');
+    }
+
+    // --- Copy link ---
+    async function copyLink() {
+      try {
+        await navigator.clipboard.writeText(shareUrl);
+      } catch {
+        // Fallback for older browsers
+        const input = document.createElement('input');
+        input.value = shareUrl;
+        document.body.appendChild(input);
+        input.select();
+        document.execCommand('copy');
+        document.body.removeChild(input);
+      }
+      const toast = document.getElementById('copied-toast');
+      toast.classList.add('show');
+      setTimeout(() => toast.classList.remove('show'), 2000);
+    }
+
+    // --- WebRTC ---
     async function sendOffer() {
       if (!stream) return;
 
@@ -297,7 +513,7 @@
         pc = null;
       }
       socket.emit('stop-sharing');
-      showState('ready');
+      showState(isMobile ? 'mobile' : 'ready');
     }
 
     function showState(state) {
@@ -311,7 +527,7 @@
     }
 
     function resetState() {
-      showState('ready');
+      showState(isMobile ? 'mobile' : 'ready');
     }
   </script>
 </body>

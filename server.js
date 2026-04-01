@@ -81,6 +81,10 @@ io.on('connection', (socket) => {
     socket.to(room).emit('ice-candidate', { candidate });
   });
 
+  socket.on('image-share', ({ room, image }) => {
+    socket.to(room).emit('image-share', { image });
+  });
+
   socket.on('stop-sharing', () => {
     if (currentRoom) {
       socket.to(currentRoom).emit('sharing-stopped');
