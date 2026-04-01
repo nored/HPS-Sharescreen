@@ -33,7 +33,12 @@ echo ""
 # --- Install cage + Chromium (that's it) ---
 echo "[1/5] Installing cage + chromium..."
 apt-get update -qq
-apt-get install -y -qq cage chromium-browser > /dev/null
+# Bookworm uses 'chromium', older releases use 'chromium-browser'
+CHROMIUM_PKG="chromium"
+apt-cache show chromium > /dev/null 2>&1 || CHROMIUM_PKG="chromium-browser"
+apt-get install -y -qq cage "${CHROMIUM_PKG}" > /dev/null
+CHROMIUM_BIN=$(which chromium 2>/dev/null || which chromium-browser 2>/dev/null)
+echo "    Using: ${CHROMIUM_BIN}"
 
 # --- Boot config ---
 echo "[2/5] Configuring boot..."
@@ -92,7 +97,7 @@ RestartSec=3
 
 ExecStartPre=/bin/mkdir -p /run/user/$(id -u ${PI_USER})
 ExecStartPre=/bin/chown ${PI_USER}:${PI_USER} /run/user/$(id -u ${PI_USER})
-ExecStart=/usr/bin/cage -s -- chromium-browser \\
+ExecStart=/usr/bin/cage -s -- ${CHROMIUM_BIN} \\
   --kiosk \\
   --noerrdialogs \\
   --disable-infobars \\
