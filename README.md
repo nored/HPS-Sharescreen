@@ -91,12 +91,13 @@ Jeder Konferenzraum bekommt einen Raspberry Pi Zero W mit Display.
 
 1. **Raspberry Pi OS Lite** mit dem Raspberry Pi Imager flashen. Im Imager WLAN, SSH und Benutzername konfigurieren.
 
-2. Pi booten und per SSH verbinden:
+2. Pi booten, per SSH verbinden und einrichten — ein Befehl:
    ```bash
-   ssh pi@<pi-ip>
+   curl -sL https://raw.githubusercontent.com/nored/HPS-Sharescreen/main/pi-setup/setup.sh -o /tmp/setup.sh && sudo bash /tmp/setup.sh Kiel
    ```
+   Ersetze `Kiel` durch den jeweiligen Raumnamen.
 
-3. Setup-Ordner auf den Pi kopieren und ausführen:
+   **Alternativ** manuell:
    ```bash
    # Vom eigenen Rechner:
    scp -r pi-setup/ pi@<pi-ip>:/home/pi/
