@@ -33,22 +33,7 @@ echo ""
 # --- Install cage + Chromium (that's it) ---
 echo "[1/5] Installing cage + chromium..."
 apt-get update -qq
-# Detect correct chromium package name (varies by OS version)
-if apt-cache policy chromium 2>/dev/null | grep -q "Candidate:" && \
-   ! apt-cache policy chromium 2>/dev/null | grep -q "Candidate: (none)"; then
-  CHROMIUM_PKG="chromium"
-elif apt-cache policy chromium-browser 2>/dev/null | grep -q "Candidate:" && \
-     ! apt-cache policy chromium-browser 2>/dev/null | grep -q "Candidate: (none)"; then
-  CHROMIUM_PKG="chromium-browser"
-else
-  echo "ERROR: Neither 'chromium' nor 'chromium-browser' available."
-  echo "Try: sudo apt-get install chromium manually."
-  exit 1
-fi
-echo "    Package: ${CHROMIUM_PKG}"
-apt-get install -y -qq cage "${CHROMIUM_PKG}" > /dev/null
-CHROMIUM_BIN=$(which chromium 2>/dev/null || which chromium-browser 2>/dev/null)
-echo "    Binary:  ${CHROMIUM_BIN}"
+apt-get install -y -qq cage chromium > /dev/null
 
 # --- Boot config ---
 echo "[2/5] Configuring boot..."
@@ -107,7 +92,7 @@ RestartSec=3
 
 ExecStartPre=/bin/mkdir -p /run/user/$(id -u ${PI_USER})
 ExecStartPre=/bin/chown ${PI_USER}:${PI_USER} /run/user/$(id -u ${PI_USER})
-ExecStart=/usr/bin/cage -s -- ${CHROMIUM_BIN} \\
+ExecStart=/usr/bin/cage -s -- /usr/bin/chromium \\
   --kiosk \\
   --noerrdialogs \\
   --disable-infobars \\
