@@ -376,11 +376,11 @@
         iceConfigReady = true;
       });
 
-    // Re-join room on reconnect
+    // Join room on every (re)connect
     socket.on('connect', () => {
+      dbg(`Socket connected: ${socket.id}`, 'signal');
       socket.emit('join', { room, type: 'sharer' });
     });
-    socket.emit('join', { room, type: 'sharer' });
 
     socket.on('room-status', ({ hasDisplay }) => {
       displayReady = hasDisplay;

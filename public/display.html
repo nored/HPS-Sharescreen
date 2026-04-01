@@ -273,11 +273,12 @@
         }
       });
 
-    // Re-join room on reconnect (socket.io auto-reconnects but we need to re-register)
+    // Join room on every (re)connect — socket.io auto-reconnects
+    // but we need to re-register in the room after reconnect
     socket.on('connect', () => {
+      dbg(`Socket connected: ${socket.id}`, 'signal');
       socket.emit('join', { room, type: 'display' });
     });
-    socket.emit('join', { room, type: 'display' });
 
     function serializeCandidate(c) {
       return { candidate: c.candidate, sdpMid: c.sdpMid, sdpMLineIndex: c.sdpMLineIndex };
