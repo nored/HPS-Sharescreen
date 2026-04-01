@@ -1,0 +1,11 @@
+services:
+  sharescreen:
+    build: .
+    container_name: hps-sharescreen
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - PORT=3000
+      - BASE_URL=https://share.hotel-park-soltau.de
+      - ROOMS=Kiel,Hamburg,Bremen,Heide,Lübeck

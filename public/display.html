@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bildschirm teilen</title>
+  <script src="/socket.io/socket.io.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    :root {
+      --primary: #95a321;
+      --primary-light: #b5c84a;
+      --dark: #2a2a29;
+      --gray: #f5f5f3;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--dark);
+      color: #fff;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    /* Idle screen: QR code + instructions */
+    #idle-screen {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      gap: 40px;
+      padding: 40px;
+    }
+
+    #idle-screen.hidden { display: none; }
+
+    .logo {
+      width: 280px;
+      margin-bottom: 10px;
+    }
+
+    .room-name {
+      font-size: 1.4rem;
+      color: var(--primary-light);
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      font-weight: 300;
+    }
+
+    .qr-container {
+      background: #fff;
+      border-radius: 20px;
+      padding: 30px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+    }
+
+    #qr-canvas {
+      display: block;
+    }
+
+    .instructions {
+      text-align: center;
+      max-width: 600px;
+    }
+
+    .instructions h2 {
+      font-size: 1.8rem;
+      font-weight: 400;
+      margin-bottom: 24px;
+      color: var(--primary-light);
+    }
+
+    .steps {
+      display: flex;
+      gap: 50px;
+      justify-content: center;
+    }
+
+    .step {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .step-number {
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      background: var(--primary);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.3rem;
+      font-weight: 600;
+    }
+
+    .step-text {
+      font-size: 1.1rem;
+      color: #ccc;
+      text-align: center;
+      line-height: 1.4;
+    }
+
+    .url-hint {
+      margin-top: 30px;
+      font-size: 1rem;
+      color: #888;
+    }
+
+    .url-hint span {
+      color: var(--primary-light);
+      font-weight: 500;
+    }
+
+    /* Video stream (active sharing) */
+    #video-screen {
+      display: none;
+      width: 100vw;
+      height: 100vh;
+      background: #000;
+    }
+
+    #video-screen.active {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    #remote-video {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      background: #000;
+    }
+
+    /* Connection status indicator */
+    .status-bar {
+      position: fixed;
+      top: 16px;
+      right: 16px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(0,0,0,0.6);
+      padding: 8px 16px;
+      border-radius: 20px;
+      font-size: 0.85rem;
+      z-index: 100;
+    }
+
+    .status-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: #666;
+    }
+
+    .status-dot.connected { background: var(--primary); }
+    .status-dot.streaming { background: #4CAF50; animation: pulse 2s infinite; }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+  </style>
+</head>
+<body>
+  <div class="status-bar">
+    <div class="status-dot" id="status-dot"></div>
+    <span id="status-text">Warte auf Verbindung...</span>
+  </div>
+
+  <div id="idle-screen">
+    <img src="/logo.svg" alt="Hotel Park Soltau" class="logo">
+    <div class="room-name" id="room-name"></div>
+    <div class="qr-container">
+      <canvas id="qr-canvas"></canvas>
+    </div>
+    <div class="instructions">
+      <h2>Bildschirm teilen</h2>
+      <div class="steps">
+        <div class="step">
+          <div class="step-number">1</div>
+          <div class="step-text">QR-Code<br>scannen</div>
+        </div>
+        <div class="step">
+          <div class="step-number">2</div>
+          <div class="step-text">Bildschirm<br>freigeben</div>
+        </div>
+        <div class="step">
+          <div class="step-number">3</div>
+          <div class="step-text">Pr&auml;sentation<br>starten</div>
+        </div>
+      </div>
+      <div class="url-hint">Oder besuchen Sie: <span id="share-url"></span></div>
+    </div>
+  </div>
+
+  <div id="video-screen">
+    <video id="remote-video" autoplay playsinline></video>
+  </div>
+
+  <!-- QR Code library -->
+  <script src="/qrious.min.js"></script>
+
+  <script>
+    const room = window.location.pathname.replace('/', '');
+    const baseUrl = window.location.origin;
+    const shareUrl = `${baseUrl}/${room}/share`;
+
+    // Set room name
+    document.getElementById('room-name').textContent = `Raum ${room}`;
+    document.getElementById('share-url').textContent = shareUrl;
+
+    // Generate QR code
+    const qr = new QRious({
+      element: document.getElementById('qr-canvas'),
+      value: shareUrl,
+      size: 280,
+      level: 'M',
+      foreground: '#2a2a29',
+      background: '#ffffff'
+    });
+
+    // Socket.IO + WebRTC
+    const socket = io();
+    let pc = null;
+
+    socket.emit('join', { room, type: 'display' });
+
+    socket.on('offer', async ({ offer }) => {
+      pc = new RTCPeerConnection({
+        iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+      });
+
+      pc.ontrack = (event) => {
+        const video = document.getElementById('remote-video');
+        video.srcObject = event.streams[0];
+        document.getElementById('idle-screen').classList.add('hidden');
+        document.getElementById('video-screen').classList.add('active');
+        document.getElementById('status-dot').className = 'status-dot streaming';
+        document.getElementById('status-text').textContent = 'Bildschirm wird geteilt';
+      };
+
+      pc.onicecandidate = (event) => {
+        if (event.candidate) {
+          socket.emit('ice-candidate', { room, candidate: event.candidate });
+        }
+      };
+
+      pc.onconnectionstatechange = () => {
+        if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') {
+          stopViewing();
+        }
+      };
+
+      await pc.setRemoteDescription(new RTCSessionDescription(offer));
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+      socket.emit('answer', { room, answer });
+    });
+
+    socket.on('ice-candidate', async ({ candidate }) => {
+      if (pc && candidate) {
+        await pc.addIceCandidate(new RTCIceCandidate(candidate));
+      }
+    });
+
+    socket.on('sharing-stopped', () => {
+      stopViewing();
+    });
+
+    socket.on('room-status', ({ hasSharer }) => {
+      if (!hasSharer) {
+        document.getElementById('status-dot').className = 'status-dot';
+        document.getElementById('status-text').textContent = 'Warte auf Verbindung...';
+      } else {
+        document.getElementById('status-dot').className = 'status-dot connected';
+        document.getElementById('status-text').textContent = 'Verbindung wird hergestellt...';
+      }
+    });
+
+    function stopViewing() {
+      if (pc) {
+        pc.close();
+        pc = null;
+      }
+      document.getElementById('remote-video').srcObject = null;
+      document.getElementById('idle-screen').classList.remove('hidden');
+      document.getElementById('video-screen').classList.remove('active');
+      document.getElementById('status-dot').className = 'status-dot';
+      document.getElementById('status-text').textContent = 'Warte auf Verbindung...';
+    }
+  </script>
+</body>
+</html>
