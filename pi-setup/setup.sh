@@ -3,12 +3,12 @@
 # ShareScreen Raspberry Pi Setup
 # =============================================================================
 #
-# For Raspberry Pi OS Lite (no desktop). Installs minimal X11 + Chromium
-# and a systemd service that boots straight into the kiosk.
+# For Raspberry Pi OS Lite. Installs cage (minimal Wayland kiosk
+# compositor) + Chromium. Nothing else. Boots straight into fullscreen.
 #
 # USAGE:
-#   1. Flash Raspberry Pi OS Lite to SD card (use Raspberry Pi Imager,
-#      configure WiFi + SSH + username in the imager settings)
+#   1. Flash Raspberry Pi OS Lite (use Raspberry Pi Imager —
+#      configure WiFi, SSH, and username in the imager settings)
 #   2. Boot the Pi, SSH in
 #   3. Copy this folder to the Pi:
 #        scp -r pi-setup/ pi@<pi-ip>:/home/pi/
@@ -30,23 +30,17 @@ echo "  ShareScreen Setup — Raum ${ROOM}"
 echo "========================================="
 echo ""
 
-# --- Install minimal X11 + Chromium ---
-echo "[1/6] Installing packages..."
+# --- Install cage + Chromium (that's it) ---
+echo "[1/5] Installing cage + chromium..."
 apt-get update -qq
-apt-get install -y -qq \
-  xserver-xorg \
-  x11-xserver-utils \
-  xinit \
-  chromium-browser \
-  unclutter \
-  fonts-noto \
-  > /dev/null
+apt-get install -y -qq cage chromium-browser > /dev/null
 
-# --- GPU / boot config ---
-echo "[2/6] Configuring GPU and boot..."
+# --- Boot config ---
+echo "[2/5] Configuring boot..."
 CONFIG="/boot/firmware/config.txt"
 [ ! -f "$CONFIG" ] && CONFIG="/boot/config.txt"
 
+# GPU memory for hardware video decoding
 if grep -q "^gpu_mem=" "$CONFIG"; then
   sed -i 's/^gpu_mem=.*/gpu_mem=128/' "$CONFIG"
 else
@@ -56,11 +50,9 @@ fi
 if ! grep -q "^arm_freq=" "$CONFIG"; then
   cat >> "$CONFIG" <<BOOT
 
-# ShareScreen performance
+# ShareScreen
 arm_freq=1050
 over_voltage=2
-
-# Force HDMI output even if no display detected at boot
 hdmi_force_hotplug=1
 hdmi_group=1
 hdmi_mode=16
@@ -68,31 +60,17 @@ BOOT
 fi
 
 # --- Disable unnecessary services ---
-echo "[3/6] Disabling unnecessary services..."
-systemctl disable bluetooth 2>/dev/null || true
-systemctl disable hciuart 2>/dev/null || true
-systemctl disable triggerhappy 2>/dev/null || true
-systemctl disable avahi-daemon 2>/dev/null || true
-systemctl disable ModemManager 2>/dev/null || true
+echo "[3/5] Disabling unnecessary services..."
+systemctl disable bluetooth hciuart triggerhappy avahi-daemon ModemManager 2>/dev/null || true
 
-# --- System tuning ---
-echo "[4/6] System tuning..."
+# System tuning
 cat > /etc/sysctl.d/99-sharescreen.conf <<SYSCTL
 vm.swappiness=10
 net.core.rmem_max=2500000
 SYSCTL
-sysctl -p /etc/sysctl.d/99-sharescreen.conf > /dev/null 2>&1
-
-# --- Install kiosk script ---
-echo "[5/6] Installing kiosk..."
-cp "$(dirname "$0")/kiosk.sh" "${PI_HOME}/kiosk.sh"
-chmod +x "${PI_HOME}/kiosk.sh"
-
-echo "${ROOM}" > "${PI_HOME}/.sharescreen-room"
-chown "${PI_USER}:${PI_USER}" "${PI_HOME}/.sharescreen-room" "${PI_HOME}/kiosk.sh"
 
 # --- systemd service ---
-echo "[6/6] Creating systemd service..."
+echo "[4/5] Creating systemd service..."
 cat > /etc/systemd/system/sharescreen.service <<SERVICE
 [Unit]
 Description=ShareScreen Kiosk
@@ -103,6 +81,7 @@ Wants=network-online.target
 Type=simple
 User=${PI_USER}
 Environment=HOME=${PI_HOME}
+Environment=XDG_RUNTIME_DIR=/run/user/$(id -u ${PI_USER})
 PAMName=login
 TTYPath=/dev/tty1
 StandardInput=tty
@@ -111,7 +90,28 @@ StandardError=journal
 Restart=always
 RestartSec=3
 
-ExecStart=/usr/bin/xinit ${PI_HOME}/kiosk.sh ${ROOM} -- /usr/bin/X :0 vt1 -nocursor -nolisten tcp
+ExecStartPre=/bin/mkdir -p /run/user/$(id -u ${PI_USER})
+ExecStartPre=/bin/chown ${PI_USER}:${PI_USER} /run/user/$(id -u ${PI_USER})
+ExecStart=/usr/bin/cage -s -- chromium-browser \\
+  --kiosk \\
+  --noerrdialogs \\
+  --disable-infobars \\
+  --disable-translate \\
+  --no-first-run \\
+  --ozone-platform=wayland \\
+  --autoplay-policy=no-user-gesture-required \\
+  --force-webrtc-ip-handling-policy=default_public_interface_only \\
+  --enable-gpu-rasterization \\
+  --enable-zero-copy \\
+  --ignore-gpu-blocklist \\
+  --enable-accelerated-video-decode \\
+  --disable-background-timer-throttling \\
+  --disable-backgrounding-occluded-windows \\
+  --disable-renderer-backgrounding \\
+  --memory-pressure-off \\
+  --disable-features=TranslateUI \\
+  --disk-cache-size=50000000 \\
+  https://share.hotel-park-soltau.de/${ROOM}
 
 [Install]
 WantedBy=multi-user.target
@@ -119,32 +119,24 @@ SERVICE
 
 systemctl daemon-reload
 systemctl enable sharescreen.service
-
-# Disable default getty on tty1 (we use it for X)
 systemctl disable getty@tty1.service 2>/dev/null || true
 
 # --- Set hostname ---
+echo "[5/5] Setting hostname..."
 HOSTNAME="sharescreen-$(echo ${ROOM} | tr '[:upper:]' '[:lower:]')"
-hostnamectl set-hostname "${HOSTNAME}" 2>/dev/null || \
-  echo "${HOSTNAME}" > /etc/hostname
-
-chown -R "${PI_USER}:${PI_USER}" "${PI_HOME}"
+hostnamectl set-hostname "${HOSTNAME}" 2>/dev/null || echo "${HOSTNAME}" > /etc/hostname
 
 echo ""
 echo "========================================="
 echo "  Setup complete!"
 echo "  Hostname: ${HOSTNAME}"
 echo "  Room:     ${ROOM}"
-echo "  Service:  sharescreen.service"
 echo "========================================="
 echo ""
-echo "  Useful commands:"
-echo "    sudo systemctl status sharescreen"
-echo "    sudo systemctl restart sharescreen"
-echo "    sudo journalctl -u sharescreen -f"
+echo "  sudo systemctl status sharescreen"
+echo "  sudo systemctl restart sharescreen"
+echo "  sudo journalctl -u sharescreen -f"
 echo ""
-echo "  Rebooting in 5 seconds..."
-echo "  (Ctrl+C to cancel)"
-echo ""
+echo "  Rebooting in 5 seconds... (Ctrl+C to cancel)"
 sleep 5
 reboot
