@@ -33,9 +33,14 @@ app.get('/api/rooms', (req, res) => {
 app.get('/api/ice-config', (req, res) => {
   res.json({
     iceServers: [
-      // Local STUN (also used by TURN)
+      // Public STUN servers — these produce srflx candidates with real IPs,
+      // bypassing Chrome/Edge mDNS obfuscation that breaks LAN discovery
+      { urls: [
+        'stun:stun.l.google.com:19302',
+        'stun:stun1.l.google.com:19302'
+      ]},
+      // Local STUN + TURN
       { urls: `stun:${TURN_HOST}:${TURN_PORT}` },
-      // TURN relay — UDP and TCP for maximum compatibility
       {
         urls: [
           `turn:${TURN_HOST}:${TURN_PORT}?transport=udp`,
@@ -44,9 +49,7 @@ app.get('/api/ice-config', (req, res) => {
         username: TURN_USER,
         credential: TURN_PASS
       }
-    ],
-    // Force relay candidates to be gathered (not just host)
-    iceTransportPolicy: 'all'
+    ]
   });
 });
 
