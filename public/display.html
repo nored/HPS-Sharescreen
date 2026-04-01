@@ -245,18 +245,33 @@
     // Socket.IO + WebRTC
     const socket = io();
     let pc = null;
+    let pendingCandidates = [];  // Queue ICE candidates until local+remote descriptions are set
 
     socket.emit('join', { room, type: 'display' });
 
     socket.on('offer', async ({ offer }) => {
+      // Clean up any previous connection
+      if (pc) {
+        pc.ontrack = null;
+        pc.onicecandidate = null;
+        pc.onconnectionstatechange = null;
+        pc.close();
+        pc = null;
+      }
+      pendingCandidates = [];
+
       pc = new RTCPeerConnection({
         iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
       });
 
       pc.ontrack = (event) => {
         const video = document.getElementById('remote-video');
-        video.srcObject = event.streams[0];
+        // Only set srcObject if it changed (avoids flicker)
+        if (video.srcObject !== event.streams[0]) {
+          video.srcObject = event.streams[0];
+        }
         document.getElementById('idle-screen').classList.add('hidden');
+        document.getElementById('image-screen').classList.remove('active');
         document.getElementById('video-screen').classList.add('active');
         document.getElementById('status-dot').className = 'status-dot streaming';
         document.getElementById('status-text').textContent = 'Bildschirm wird geteilt';
@@ -269,24 +284,61 @@
       };
 
       pc.onconnectionstatechange = () => {
-        if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') {
+        const state = pc.connectionState;
+        if (state === 'failed') {
           stopViewing();
+        } else if (state === 'disconnected') {
+          // Brief disconnects are normal (e.g. network hiccup), wait before resetting
+          setTimeout(() => {
+            if (pc && pc.connectionState === 'disconnected') {
+              stopViewing();
+            }
+          }, 5000);
         }
       };
 
-      await pc.setRemoteDescription(new RTCSessionDescription(offer));
-      const answer = await pc.createAnswer();
-      await pc.setLocalDescription(answer);
-      socket.emit('answer', { room, answer });
+      try {
+        await pc.setRemoteDescription(new RTCSessionDescription(offer));
+
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+        socket.emit('answer', { room, answer });
+
+        // Now flush any ICE candidates that arrived during negotiation
+        for (const c of pendingCandidates) {
+          await pc.addIceCandidate(new RTCIceCandidate(c));
+        }
+        pendingCandidates = [];
+      } catch (err) {
+        console.error('Failed during offer handling:', err);
+        stopViewing();
+      }
     });
 
     socket.on('ice-candidate', async ({ candidate }) => {
-      if (pc && candidate) {
-        await pc.addIceCandidate(new RTCIceCandidate(candidate));
+      if (!candidate) return;
+      // Queue if we don't have both descriptions set yet
+      if (!pc || !pc.remoteDescription || !pc.remoteDescription.type || !pc.localDescription || !pc.localDescription.type) {
+        pendingCandidates.push(candidate);
+      } else {
+        try {
+          await pc.addIceCandidate(new RTCIceCandidate(candidate));
+        } catch (err) {
+          console.error('Failed to add ICE candidate:', err);
+        }
       }
     });
 
     socket.on('image-share', ({ image }) => {
+      // Stop any active video stream
+      if (pc) {
+        pc.ontrack = null;
+        pc.onicecandidate = null;
+        pc.onconnectionstatechange = null;
+        pc.close();
+        pc = null;
+      }
+      document.getElementById('remote-video').srcObject = null;
       document.getElementById('shared-image').src = image;
       document.getElementById('idle-screen').classList.add('hidden');
       document.getElementById('video-screen').classList.remove('active');
@@ -310,7 +362,11 @@
     });
 
     function stopViewing() {
+      pendingCandidates = [];
       if (pc) {
+        pc.ontrack = null;
+        pc.onicecandidate = null;
+        pc.onconnectionstatechange = null;
         pc.close();
         pc = null;
       }

@@ -5,7 +5,9 @@ const path = require('path');
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server);
+const io = new Server(server, {
+  maxHttpBufferSize: 10 * 1024 * 1024 // 10 MB for image uploads
+});
 
 const PORT = process.env.PORT || 3000;
 const BASE_URL = process.env.BASE_URL || 'https://share.hotel-park-soltau.de';

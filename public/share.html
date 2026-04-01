@@ -348,40 +348,57 @@
     document.getElementById('room-badge').textContent = `Raum ${room}`;
     document.getElementById('share-url-box').textContent = shareUrl;
 
-    // Detect mobile
     const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-
-    // Show correct initial state
-    if (isMobile) {
-      showState('mobile');
-    } else {
-      showState('ready');
-    }
+    showState(isMobile ? 'mobile' : 'ready');
 
     const socket = io();
     let pc = null;
     let stream = null;
+    let pendingCandidates = [];  // Queue ICE candidates until remote description is set
+    let negotiating = false;     // Prevent overlapping offer/answer exchanges
+    let displayReady = false;    // Track whether the display is connected
 
     socket.emit('join', { room, type: 'sharer' });
 
     socket.on('room-status', ({ hasDisplay }) => {
+      displayReady = hasDisplay;
       const warning = document.getElementById('no-display-warning');
       if (warning) warning.style.display = hasDisplay ? 'none' : 'block';
     });
 
+    // Display is ready (either was already there or just connected)
     socket.on('ready', () => {
-      if (stream) sendOffer();
+      displayReady = true;
+      if (stream && !negotiating) sendOffer();
     });
 
     socket.on('answer', async ({ answer }) => {
-      if (pc) {
+      if (!pc) return;
+      try {
         await pc.setRemoteDescription(new RTCSessionDescription(answer));
+        // Flush queued ICE candidates now that remote description is set
+        for (const c of pendingCandidates) {
+          await pc.addIceCandidate(new RTCIceCandidate(c));
+        }
+        pendingCandidates = [];
+        negotiating = false;
+      } catch (err) {
+        console.error('Failed to set answer:', err);
+        negotiating = false;
       }
     });
 
     socket.on('ice-candidate', async ({ candidate }) => {
-      if (pc && candidate) {
-        await pc.addIceCandidate(new RTCIceCandidate(candidate));
+      if (!candidate) return;
+      if (!pc || !pc.remoteDescription || !pc.remoteDescription.type) {
+        // Queue candidate — remote description not set yet
+        pendingCandidates.push(candidate);
+      } else {
+        try {
+          await pc.addIceCandidate(new RTCIceCandidate(candidate));
+        } catch (err) {
+          console.error('Failed to add ICE candidate:', err);
+        }
       }
     });
 
@@ -397,11 +414,10 @@
         document.getElementById('sharing-label').textContent = 'Bildschirm wird geteilt';
         showState('sharing');
 
-        stream.getVideoTracks()[0].onended = () => {
-          stopSharing();
-        };
+        stream.getVideoTracks()[0].onended = () => stopSharing();
 
-        sendOffer();
+        if (displayReady) sendOffer();
+        // If display is not ready yet, 'ready' event will trigger sendOffer
       } catch (err) {
         if (err.name === 'NotAllowedError') {
           showError('Die Bildschirmfreigabe wurde abgelehnt. Bitte versuchen Sie es erneut und erlauben Sie den Zugriff.');
@@ -423,11 +439,9 @@
         document.getElementById('sharing-label').textContent = 'Kamera wird geteilt';
         showState('sharing');
 
-        stream.getVideoTracks()[0].onended = () => {
-          stopSharing();
-        };
+        stream.getVideoTracks()[0].onended = () => stopSharing();
 
-        sendOffer();
+        if (displayReady) sendOffer();
       } catch (err) {
         if (err.name === 'NotAllowedError') {
           showError('Kamerazugriff wurde abgelehnt. Bitte erlauben Sie den Zugriff in Ihren Browsereinstellungen.');
@@ -447,8 +461,6 @@
         const dataUrl = e.target.result;
         document.getElementById('image-preview-img').src = dataUrl;
         showState('image');
-
-        // Send image via socket to display
         socket.emit('image-share', { room, image: dataUrl });
       };
       reader.readAsDataURL(file);
@@ -465,7 +477,6 @@
       try {
         await navigator.clipboard.writeText(shareUrl);
       } catch {
-        // Fallback for older browsers
         const input = document.createElement('input');
         input.value = shareUrl;
         document.body.appendChild(input);
@@ -480,17 +491,23 @@
 
     // --- WebRTC ---
     async function sendOffer() {
-      if (!stream) return;
+      if (!stream || negotiating) return;
+      negotiating = true;
+      pendingCandidates = [];
 
-      if (pc) pc.close();
+      // Tear down previous connection cleanly
+      if (pc) {
+        pc.onicecandidate = null;
+        pc.onconnectionstatechange = null;
+        pc.close();
+        pc = null;
+      }
 
       pc = new RTCPeerConnection({
         iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
       });
 
-      stream.getTracks().forEach(track => {
-        pc.addTrack(track, stream);
-      });
+      stream.getTracks().forEach(track => pc.addTrack(track, stream));
 
       pc.onicecandidate = (event) => {
         if (event.candidate) {
@@ -498,17 +515,45 @@
         }
       };
 
-      const offer = await pc.createOffer();
-      await pc.setLocalDescription(offer);
-      socket.emit('offer', { room, offer });
+      // Auto-reconnect on failure
+      pc.onconnectionstatechange = () => {
+        const state = pc.connectionState;
+        if (state === 'failed') {
+          console.warn('WebRTC connection failed, retrying...');
+          negotiating = false;
+          setTimeout(() => { if (stream && displayReady) sendOffer(); }, 1000);
+        } else if (state === 'disconnected') {
+          // Brief disconnects are normal, wait before acting
+          setTimeout(() => {
+            if (pc && pc.connectionState === 'disconnected') {
+              console.warn('WebRTC still disconnected, retrying...');
+              negotiating = false;
+              if (stream && displayReady) sendOffer();
+            }
+          }, 3000);
+        }
+      };
+
+      try {
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+        socket.emit('offer', { room, offer });
+      } catch (err) {
+        console.error('Failed to create offer:', err);
+        negotiating = false;
+      }
     }
 
     function stopSharing() {
+      negotiating = false;
+      pendingCandidates = [];
       if (stream) {
         stream.getTracks().forEach(track => track.stop());
         stream = null;
       }
       if (pc) {
+        pc.onicecandidate = null;
+        pc.onconnectionstatechange = null;
         pc.close();
         pc = null;
       }
