@@ -222,6 +222,7 @@
 
   <!-- QR Code library -->
   <script src="/qrious.min.js"></script>
+  <script src="/debug.js"></script>
 
   <script>
     const room = window.location.pathname.replace('/', '');
@@ -244,19 +245,20 @@
 
     // Socket.IO + WebRTC
     const socket = io();
+    if (window.dbgWatchSocket) dbgWatchSocket(socket);
+
     let pc = null;
     let pendingCandidates = [];
     let iceConfig = { iceServers: [] };
     let iceConfigReady = false;
-    let pendingOffer = null; // Store offer if it arrives before ICE config
+    let pendingOffer = null;
 
-    // ICE config MUST be loaded before any RTCPeerConnection is created
     fetch('/api/ice-config')
       .then(r => r.json())
       .then(config => {
         iceConfig = config;
         iceConfigReady = true;
-        // If an offer arrived while we were loading config, handle it now
+        dbg(`ICE config loaded: ${JSON.stringify(config.iceServers.map(s => s.urls))}`, 'info');
         if (pendingOffer) {
           handleOffer(pendingOffer);
           pendingOffer = null;
@@ -299,6 +301,7 @@
       pendingCandidates = [];
 
       pc = new RTCPeerConnection(iceConfig);
+      if (window.dbgWatchPc) dbgWatchPc(pc, 'display');
 
       pc.ontrack = (event) => {
         const video = document.getElementById('remote-video');

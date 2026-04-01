@@ -342,6 +342,7 @@
     </div>
   </div>
 
+  <script src="/debug.js"></script>
   <script>
     const room = window.location.pathname.split('/')[1];
     const shareUrl = window.location.href;
@@ -352,6 +353,7 @@
     showState(isMobile ? 'mobile' : 'ready');
 
     const socket = io();
+    if (window.dbgWatchSocket) dbgWatchSocket(socket);
     let pc = null;
     let stream = null;
     let pendingCandidates = [];
@@ -366,12 +368,12 @@
       .then(config => {
         iceConfig = config;
         iceConfigReady = true;
-        // If we were waiting to send an offer, do it now
+        dbg(`ICE config loaded: ${JSON.stringify(config.iceServers.map(s => s.urls))}`, 'info');
         if (stream && displayReady && !negotiating) sendOffer();
       })
       .catch(err => {
         console.warn('Failed to load ICE config:', err);
-        iceConfigReady = true; // proceed with empty config as last resort
+        iceConfigReady = true;
       });
 
     socket.emit('join', { room, type: 'sharer' });
@@ -522,6 +524,8 @@
       }
 
       pc = new RTCPeerConnection(iceConfig);
+      if (window.dbgWatchPc) dbgWatchPc(pc, 'sharer');
+      dbg(`Tracks: ${stream.getTracks().map(t => t.kind + ':' + t.readyState).join(', ')}`, 'webrtc');
 
       stream.getTracks().forEach(track => pc.addTrack(track, stream));
 
