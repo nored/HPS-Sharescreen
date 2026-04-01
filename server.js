@@ -6,10 +6,10 @@ const path = require('path');
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
-  maxHttpBufferSize: 10 * 1024 * 1024, // 10 MB for image uploads
-  pingInterval: 10000,   // Ping every 10s to keep connection alive through proxies
-  pingTimeout: 30000,    // Wait 30s for pong before considering disconnected
-  transports: ['websocket', 'polling'] // Prefer WebSocket, fallback to polling
+  maxHttpBufferSize: 10 * 1024 * 1024,
+  pingInterval: 10000,
+  pingTimeout: 30000,
+  transports: ['websocket', 'polling']
 });
 
 const PORT = process.env.PORT || 3000;
@@ -19,27 +19,36 @@ const TURN_PORT = process.env.TURN_PORT || '3478';
 const TURN_USER = process.env.TURN_USER || 'sharescreen';
 const TURN_PASS = process.env.TURN_PASS || 'hotelparkshare2024';
 
-// Rooms configured via environment variable (comma-separated)
 const ROOMS = (process.env.ROOMS || 'Kiel,Hamburg,Bremen').split(',').map(r => r.trim());
 
 app.use(express.static(path.join(__dirname, 'public')));
+
+// --- MJPEG stream state per room ---
+const mjpegClients = {};  // room -> Set of response objects
+const roomStreaming = {};  // room -> boolean
+
+ROOMS.forEach(room => {
+  mjpegClients[room] = new Set();
+  roomStreaming[room] = false;
+});
 
 // API: list available rooms
 app.get('/api/rooms', (req, res) => {
   res.json(ROOMS);
 });
 
+// API: room status (for Pi polling)
+app.get('/api/status/:room', (req, res) => {
+  const room = req.params.room;
+  if (!ROOMS.includes(room)) return res.status(404).json({ error: 'Room not found' });
+  res.json({ streaming: roomStreaming[room] || false });
+});
+
 // API: ICE server configuration (STUN + TURN)
 app.get('/api/ice-config', (req, res) => {
   res.json({
     iceServers: [
-      // Public STUN servers — these produce srflx candidates with real IPs,
-      // bypassing Chrome/Edge mDNS obfuscation that breaks LAN discovery
-      { urls: [
-        'stun:stun.l.google.com:19302',
-        'stun:stun1.l.google.com:19302'
-      ]},
-      // Local STUN + TURN
+      { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] },
       { urls: `stun:${TURN_HOST}:${TURN_PORT}` },
       {
         urls: [
@@ -53,10 +62,31 @@ app.get('/api/ice-config', (req, res) => {
   });
 });
 
-// Display page (Raspberry Pi) - serves for any configured room
+// MJPEG stream endpoint — Pi connects here with mpv/ffplay
+app.get('/:room/stream', (req, res) => {
+  const room = req.params.room;
+  if (!ROOMS.includes(room)) return res.status(404).send('Room not found');
+
+  res.writeHead(200, {
+    'Content-Type': 'multipart/x-mixed-replace; boundary=frame',
+    'Cache-Control': 'no-cache, no-store',
+    'Connection': 'keep-alive',
+    'Pragma': 'no-cache'
+  });
+
+  mjpegClients[room].add(res);
+  console.log(`MJPEG client connected to ${room} (${mjpegClients[room].size} total)`);
+
+  req.on('close', () => {
+    mjpegClients[room].delete(res);
+    console.log(`MJPEG client disconnected from ${room} (${mjpegClients[room].size} remaining)`);
+  });
+});
+
+// Display page (browser-based display, still works)
 app.get('/:room', (req, res) => {
   const room = req.params.room;
-  if (room === 'share') return res.status(404).send('Not found');
+  if (room === 'share' || room === 'api') return res.status(404).send('Not found');
   if (!ROOMS.includes(room)) return res.status(404).send('Room not found');
   res.sendFile(path.join(__dirname, 'public', 'display.html'));
 });
@@ -77,31 +107,28 @@ io.on('connection', (socket) => {
 
   socket.on('join', ({ room, type }) => {
     currentRoom = room;
-    role = type; // 'display' or 'sharer'
+    role = type;
     socket.join(room);
 
     if (!rooms[room]) rooms[room] = { display: null, sharer: null };
     rooms[room][type] = socket.id;
 
-    // Notify display that a sharer connected (or vice versa)
     if (type === 'sharer' && rooms[room].display) {
       socket.emit('ready');
     }
     if (type === 'display') {
-      // If a sharer is already waiting, tell them to start
       if (rooms[room].sharer) {
         io.to(rooms[room].sharer).emit('ready');
       }
     }
 
-    // Notify display about connection status
     io.to(room).emit('room-status', {
       hasDisplay: !!rooms[room].display,
       hasSharer: !!rooms[room].sharer
     });
   });
 
-  // WebRTC signaling
+  // WebRTC signaling (for browser-to-browser mode)
   socket.on('offer', ({ room, offer }) => {
     socket.to(room).emit('offer', { offer });
   });
@@ -118,8 +145,38 @@ io.on('connection', (socket) => {
     socket.to(room).emit('image-share', { image });
   });
 
+  // MJPEG frame from sharer's browser
+  socket.on('mjpeg-frame', ({ room, frame }) => {
+    if (!mjpegClients[room] || mjpegClients[room].size === 0) return;
+
+    const jpeg = Buffer.from(frame, 'base64');
+    const header = `--frame\r\nContent-Type: image/jpeg\r\nContent-Length: ${jpeg.length}\r\n\r\n`;
+
+    for (const client of mjpegClients[room]) {
+      try {
+        client.write(header);
+        client.write(jpeg);
+        client.write('\r\n');
+      } catch (e) {
+        mjpegClients[room].delete(client);
+      }
+    }
+  });
+
+  socket.on('stream-start', ({ room }) => {
+    if (ROOMS.includes(room)) {
+      roomStreaming[room] = true;
+      io.to(room).emit('room-status', {
+        hasDisplay: !!(rooms[room] && rooms[room].display),
+        hasSharer: true,
+        streaming: true
+      });
+    }
+  });
+
   socket.on('stop-sharing', () => {
     if (currentRoom) {
+      roomStreaming[currentRoom] = false;
       socket.to(currentRoom).emit('sharing-stopped');
     }
   });
@@ -129,13 +186,13 @@ io.on('connection', (socket) => {
       if (rooms[currentRoom][role] === socket.id) {
         rooms[currentRoom][role] = null;
       }
+      if (role === 'sharer') {
+        roomStreaming[currentRoom] = false;
+      }
       io.to(currentRoom).emit('room-status', {
         hasDisplay: !!rooms[currentRoom].display,
         hasSharer: !!rooms[currentRoom].sharer
       });
-      // Do NOT emit sharing-stopped on disconnect — the WebRTC stream is
-      // peer-to-peer and survives signaling socket outages. The display
-      // will detect the actual stream end via WebRTC connection state.
     }
   });
 });
@@ -144,4 +201,5 @@ server.listen(PORT, () => {
   console.log(`ShareScreen server running on port ${PORT}`);
   console.log(`Rooms: ${ROOMS.join(', ')}`);
   console.log(`Base URL: ${BASE_URL}`);
+  console.log(`MJPEG streams at: /<room>/stream`);
 });
