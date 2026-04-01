@@ -33,12 +33,22 @@ echo ""
 # --- Install cage + Chromium (that's it) ---
 echo "[1/5] Installing cage + chromium..."
 apt-get update -qq
-# Bookworm uses 'chromium', older releases use 'chromium-browser'
-CHROMIUM_PKG="chromium"
-apt-cache show chromium > /dev/null 2>&1 || CHROMIUM_PKG="chromium-browser"
+# Detect correct chromium package name (varies by OS version)
+if apt-cache policy chromium 2>/dev/null | grep -q "Candidate:" && \
+   ! apt-cache policy chromium 2>/dev/null | grep -q "Candidate: (none)"; then
+  CHROMIUM_PKG="chromium"
+elif apt-cache policy chromium-browser 2>/dev/null | grep -q "Candidate:" && \
+     ! apt-cache policy chromium-browser 2>/dev/null | grep -q "Candidate: (none)"; then
+  CHROMIUM_PKG="chromium-browser"
+else
+  echo "ERROR: Neither 'chromium' nor 'chromium-browser' available."
+  echo "Try: sudo apt-get install chromium manually."
+  exit 1
+fi
+echo "    Package: ${CHROMIUM_PKG}"
 apt-get install -y -qq cage "${CHROMIUM_PKG}" > /dev/null
 CHROMIUM_BIN=$(which chromium 2>/dev/null || which chromium-browser 2>/dev/null)
-echo "    Using: ${CHROMIUM_BIN}"
+echo "    Binary:  ${CHROMIUM_BIN}"
 
 # --- Boot config ---
 echo "[2/5] Configuring boot..."
