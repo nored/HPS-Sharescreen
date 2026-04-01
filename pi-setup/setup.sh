@@ -3,18 +3,17 @@
 # ShareScreen Raspberry Pi Setup
 # =============================================================================
 #
-# For Raspberry Pi OS Lite. Installs cage (minimal Wayland kiosk
-# compositor) + Chromium. Nothing else. Boots straight into fullscreen.
+# For Raspberry Pi OS Lite. Installs cog (WPE WebKit kiosk browser) —
+# a lightweight browser built for embedded devices. Runs directly on
+# the framebuffer via DRM/KMS, no X11 or Wayland compositor needed.
 #
 # USAGE:
 #   1. Flash Raspberry Pi OS Lite (use Raspberry Pi Imager —
 #      configure WiFi, SSH, and username in the imager settings)
 #   2. Boot the Pi, SSH in
-#   3. Copy this folder to the Pi:
-#        scp -r pi-setup/ pi@<pi-ip>:/home/pi/
-#   4. Run:
-#        sudo bash /home/pi/pi-setup/setup.sh Kiel
-#   5. Pi reboots into ShareScreen automatically
+#   3. Run:
+#      curl -sL https://raw.githubusercontent.com/nored/HPS-Sharescreen/main/pi-setup/setup.sh -o /tmp/setup.sh && sudo bash /tmp/setup.sh Kiel
+#   4. Pi reboots into ShareScreen automatically
 #
 # =============================================================================
 
@@ -30,17 +29,16 @@ echo "  ShareScreen Setup — Raum ${ROOM}"
 echo "========================================="
 echo ""
 
-# --- Install cage + Chromium (that's it) ---
-echo "[1/5] Installing cage + chromium..."
+# --- Install cog (WPE WebKit kiosk browser) ---
+echo "[1/5] Installing cog..."
 apt-get update -qq
-apt-get install -y cage chromium
+apt-get install -y cog
 
 # --- Boot config ---
 echo "[2/5] Configuring boot..."
 CONFIG="/boot/firmware/config.txt"
 [ ! -f "$CONFIG" ] && CONFIG="/boot/config.txt"
 
-# GPU memory for hardware video decoding
 if grep -q "^gpu_mem=" "$CONFIG"; then
   sed -i 's/^gpu_mem=.*/gpu_mem=128/' "$CONFIG"
 else
@@ -63,22 +61,10 @@ fi
 echo "[3/5] Disabling unnecessary services..."
 systemctl disable bluetooth hciuart triggerhappy avahi-daemon ModemManager 2>/dev/null || true
 
-# System tuning
 cat > /etc/sysctl.d/99-sharescreen.conf <<SYSCTL
 vm.swappiness=10
 net.core.rmem_max=2500000
 SYSCTL
-
-# --- Suppress Chromium low-RAM warning dialog ---
-mkdir -p /etc/chromium.d
-echo 'export CHROMIUM_FLAGS="${CHROMIUM_FLAGS} --disable-low-end-device-mode"' > /etc/chromium.d/sharescreen
-# Also touch the "launch anyway" flag so the dialog never shows
-mkdir -p "${PI_HOME}/.config/chromium"
-touch "${PI_HOME}/.config/chromium/Lock"
-cat > "${PI_HOME}/.config/chromium/Local State" <<'LOCALSTATE'
-{"user_experience_metrics":{"low_end_device_launch_denied":false}}
-LOCALSTATE
-chown -R "${PI_USER}:${PI_USER}" "${PI_HOME}/.config/chromium"
 
 # --- systemd service ---
 echo "[4/5] Creating systemd service..."
@@ -90,41 +76,13 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=${PI_USER}
-Environment=HOME=${PI_HOME}
-Environment=XDG_RUNTIME_DIR=/run/user/$(id -u ${PI_USER})
-PAMName=login
-TTYPath=/dev/tty1
-StandardInput=tty
-StandardOutput=journal
-StandardError=journal
+User=root
+Environment=WPE_BCMRPI_TOUCH=1
+Environment=COG_PLATFORM_DRM_RENDERER=gles2
 Restart=always
 RestartSec=3
 
-ExecStartPre=/bin/mkdir -p /run/user/$(id -u ${PI_USER})
-ExecStartPre=/bin/chown ${PI_USER}:${PI_USER} /run/user/$(id -u ${PI_USER})
-ExecStart=/usr/bin/cage -s -- /usr/bin/chromium \\
-  --kiosk \\
-  --noerrdialogs \\
-  --disable-infobars \\
-  --disable-translate \\
-  --no-first-run \\
-  --disable-session-crashed-bubble \\
-  --disable-component-update \\
-  --ozone-platform=wayland \\
-  --autoplay-policy=no-user-gesture-required \\
-  --force-webrtc-ip-handling-policy=default_public_interface_only \\
-  --enable-gpu-rasterization \\
-  --enable-zero-copy \\
-  --ignore-gpu-blocklist \\
-  --enable-accelerated-video-decode \\
-  --disable-background-timer-throttling \\
-  --disable-backgrounding-occluded-windows \\
-  --disable-renderer-backgrounding \\
-  --memory-pressure-off \\
-  --disable-features=TranslateUI \\
-  --disk-cache-size=50000000 \\
-  https://share.hotel-park-soltau.de/${ROOM}
+ExecStart=/usr/bin/cog -P drm --enable-mediasource=true https://share.hotel-park-soltau.de/${ROOM}
 
 [Install]
 WantedBy=multi-user.target
