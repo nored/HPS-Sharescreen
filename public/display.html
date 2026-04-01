@@ -245,18 +245,49 @@
     // Socket.IO + WebRTC
     const socket = io();
     let pc = null;
-    let pendingCandidates = [];  // Queue ICE candidates until local+remote descriptions are set
-    let iceConfig = { iceServers: [] };  // Loaded from server (STUN + TURN)
+    let pendingCandidates = [];
+    let iceConfig = { iceServers: [] };
+    let iceConfigReady = false;
+    let pendingOffer = null; // Store offer if it arrives before ICE config
 
-    // Fetch ICE config (TURN server credentials) before anything else
+    // ICE config MUST be loaded before any RTCPeerConnection is created
     fetch('/api/ice-config')
       .then(r => r.json())
-      .then(config => { iceConfig = config; })
-      .catch(err => console.warn('Failed to load ICE config, using defaults:', err));
+      .then(config => {
+        iceConfig = config;
+        iceConfigReady = true;
+        // If an offer arrived while we were loading config, handle it now
+        if (pendingOffer) {
+          handleOffer(pendingOffer);
+          pendingOffer = null;
+        }
+      })
+      .catch(err => {
+        console.warn('Failed to load ICE config:', err);
+        iceConfigReady = true;
+        if (pendingOffer) {
+          handleOffer(pendingOffer);
+          pendingOffer = null;
+        }
+      });
 
     socket.emit('join', { room, type: 'display' });
 
-    socket.on('offer', async ({ offer }) => {
+    // Serialize ICE candidate to a plain object (browser RTCIceCandidate
+    // objects have getters/methods that don't survive JSON.stringify)
+    function serializeCandidate(c) {
+      return { candidate: c.candidate, sdpMid: c.sdpMid, sdpMLineIndex: c.sdpMLineIndex };
+    }
+
+    socket.on('offer', ({ offer }) => {
+      if (!iceConfigReady) {
+        pendingOffer = offer;
+        return;
+      }
+      handleOffer(offer);
+    });
+
+    async function handleOffer(offer) {
       // Clean up any previous connection
       if (pc) {
         pc.ontrack = null;
@@ -271,7 +302,6 @@
 
       pc.ontrack = (event) => {
         const video = document.getElementById('remote-video');
-        // Only set srcObject if it changed (avoids flicker)
         if (video.srcObject !== event.streams[0]) {
           video.srcObject = event.streams[0];
         }
@@ -283,17 +313,17 @@
       };
 
       pc.onicecandidate = (event) => {
-        if (event.candidate) {
-          socket.emit('ice-candidate', { room, candidate: event.candidate });
+        if (event.candidate && event.candidate.candidate) {
+          socket.emit('ice-candidate', { room, candidate: serializeCandidate(event.candidate) });
         }
       };
 
       pc.onconnectionstatechange = () => {
+        if (!pc) return;
         const state = pc.connectionState;
         if (state === 'failed') {
           stopViewing();
         } else if (state === 'disconnected') {
-          // Brief disconnects are normal (e.g. network hiccup), wait before resetting
           setTimeout(() => {
             if (pc && pc.connectionState === 'disconnected') {
               stopViewing();
@@ -303,31 +333,33 @@
       };
 
       try {
-        await pc.setRemoteDescription(new RTCSessionDescription(offer));
+        await pc.setRemoteDescription(offer);
 
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
-        socket.emit('answer', { room, answer });
+        // Send plain object — avoid serialization issues across browsers
+        socket.emit('answer', { room, answer: { type: answer.type, sdp: answer.sdp } });
 
-        // Now flush any ICE candidates that arrived during negotiation
+        // Flush any ICE candidates that arrived during negotiation
         for (const c of pendingCandidates) {
-          await pc.addIceCandidate(new RTCIceCandidate(c));
+          await pc.addIceCandidate(c);
         }
         pendingCandidates = [];
       } catch (err) {
         console.error('Failed during offer handling:', err);
         stopViewing();
       }
-    });
+    }
 
     socket.on('ice-candidate', async ({ candidate }) => {
-      if (!candidate) return;
+      // Filter out empty candidates (Firefox end-of-candidates signal)
+      if (!candidate || !candidate.candidate) return;
       // Queue if we don't have both descriptions set yet
       if (!pc || !pc.remoteDescription || !pc.remoteDescription.type || !pc.localDescription || !pc.localDescription.type) {
         pendingCandidates.push(candidate);
       } else {
         try {
-          await pc.addIceCandidate(new RTCIceCandidate(candidate));
+          await pc.addIceCandidate(candidate);
         } catch (err) {
           console.error('Failed to add ICE candidate:', err);
         }
@@ -335,7 +367,6 @@
     });
 
     socket.on('image-share', ({ image }) => {
-      // Stop any active video stream
       if (pc) {
         pc.ontrack = null;
         pc.onicecandidate = null;

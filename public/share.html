@@ -354,16 +354,25 @@
     const socket = io();
     let pc = null;
     let stream = null;
-    let pendingCandidates = [];  // Queue ICE candidates until remote description is set
-    let negotiating = false;     // Prevent overlapping offer/answer exchanges
-    let displayReady = false;    // Track whether the display is connected
-    let iceConfig = { iceServers: [] };  // Loaded from server (STUN + TURN)
+    let pendingCandidates = [];
+    let negotiating = false;
+    let displayReady = false;
+    let iceConfigReady = false;
+    let iceConfig = { iceServers: [] };
 
-    // Fetch ICE config (TURN server credentials) before anything else
+    // ICE config MUST be loaded before any RTCPeerConnection is created
     fetch('/api/ice-config')
       .then(r => r.json())
-      .then(config => { iceConfig = config; })
-      .catch(err => console.warn('Failed to load ICE config, using defaults:', err));
+      .then(config => {
+        iceConfig = config;
+        iceConfigReady = true;
+        // If we were waiting to send an offer, do it now
+        if (stream && displayReady && !negotiating) sendOffer();
+      })
+      .catch(err => {
+        console.warn('Failed to load ICE config:', err);
+        iceConfigReady = true; // proceed with empty config as last resort
+      });
 
     socket.emit('join', { room, type: 'sharer' });
 
@@ -373,19 +382,17 @@
       if (warning) warning.style.display = hasDisplay ? 'none' : 'block';
     });
 
-    // Display is ready (either was already there or just connected)
     socket.on('ready', () => {
       displayReady = true;
-      if (stream && !negotiating) sendOffer();
+      if (stream && iceConfigReady && !negotiating) sendOffer();
     });
 
     socket.on('answer', async ({ answer }) => {
       if (!pc) return;
       try {
-        await pc.setRemoteDescription(new RTCSessionDescription(answer));
-        // Flush queued ICE candidates now that remote description is set
+        await pc.setRemoteDescription(answer);
         for (const c of pendingCandidates) {
-          await pc.addIceCandidate(new RTCIceCandidate(c));
+          await pc.addIceCandidate(c);
         }
         pendingCandidates = [];
         negotiating = false;
@@ -396,13 +403,12 @@
     });
 
     socket.on('ice-candidate', async ({ candidate }) => {
-      if (!candidate) return;
+      if (!candidate || !candidate.candidate) return;
       if (!pc || !pc.remoteDescription || !pc.remoteDescription.type) {
-        // Queue candidate — remote description not set yet
         pendingCandidates.push(candidate);
       } else {
         try {
-          await pc.addIceCandidate(new RTCIceCandidate(candidate));
+          await pc.addIceCandidate(candidate);
         } catch (err) {
           console.error('Failed to add ICE candidate:', err);
         }
@@ -412,8 +418,9 @@
     // --- Desktop: Screen sharing ---
     async function startSharing() {
       try {
+        // Use basic constraints — cursor/audio support varies by browser
         stream = await navigator.mediaDevices.getDisplayMedia({
-          video: { cursor: 'always' },
+          video: true,
           audio: true
         });
 
@@ -423,10 +430,9 @@
 
         stream.getVideoTracks()[0].onended = () => stopSharing();
 
-        if (displayReady) sendOffer();
-        // If display is not ready yet, 'ready' event will trigger sendOffer
+        if (displayReady && iceConfigReady) sendOffer();
       } catch (err) {
-        if (err.name === 'NotAllowedError') {
+        if (err.name === 'NotAllowedError' || err.name === 'AbortError') {
           showError('Die Bildschirmfreigabe wurde abgelehnt. Bitte versuchen Sie es erneut und erlauben Sie den Zugriff.');
         } else {
           showError('Bildschirmfreigabe wird von Ihrem Browser nicht unterst\u00fctzt oder es ist ein Fehler aufgetreten.');
@@ -448,7 +454,7 @@
 
         stream.getVideoTracks()[0].onended = () => stopSharing();
 
-        if (displayReady) sendOffer();
+        if (displayReady && iceConfigReady) sendOffer();
       } catch (err) {
         if (err.name === 'NotAllowedError') {
           showError('Kamerazugriff wurde abgelehnt. Bitte erlauben Sie den Zugriff in Ihren Browsereinstellungen.');
@@ -496,13 +502,18 @@
       setTimeout(() => toast.classList.remove('show'), 2000);
     }
 
+    // Serialize ICE candidate to a plain object (Firefox's RTCIceCandidate
+    // has getters/methods that don't survive JSON.stringify via Socket.IO)
+    function serializeCandidate(c) {
+      return { candidate: c.candidate, sdpMid: c.sdpMid, sdpMLineIndex: c.sdpMLineIndex };
+    }
+
     // --- WebRTC ---
     async function sendOffer() {
-      if (!stream || negotiating) return;
+      if (!stream || negotiating || !iceConfigReady) return;
       negotiating = true;
       pendingCandidates = [];
 
-      // Tear down previous connection cleanly
       if (pc) {
         pc.onicecandidate = null;
         pc.onconnectionstatechange = null;
@@ -515,20 +526,19 @@
       stream.getTracks().forEach(track => pc.addTrack(track, stream));
 
       pc.onicecandidate = (event) => {
-        if (event.candidate) {
-          socket.emit('ice-candidate', { room, candidate: event.candidate });
+        if (event.candidate && event.candidate.candidate) {
+          socket.emit('ice-candidate', { room, candidate: serializeCandidate(event.candidate) });
         }
       };
 
-      // Auto-reconnect on failure
       pc.onconnectionstatechange = () => {
+        if (!pc) return;
         const state = pc.connectionState;
         if (state === 'failed') {
           console.warn('WebRTC connection failed, retrying...');
           negotiating = false;
           setTimeout(() => { if (stream && displayReady) sendOffer(); }, 1000);
         } else if (state === 'disconnected') {
-          // Brief disconnects are normal, wait before acting
           setTimeout(() => {
             if (pc && pc.connectionState === 'disconnected') {
               console.warn('WebRTC still disconnected, retrying...');
@@ -542,7 +552,8 @@
       try {
         const offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
-        socket.emit('offer', { room, offer });
+        // Send plain object — Firefox's RTCSessionDescription doesn't serialize cleanly
+        socket.emit('offer', { room, offer: { type: offer.type, sdp: offer.sdp } });
       } catch (err) {
         console.error('Failed to create offer:', err);
         negotiating = false;
