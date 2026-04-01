@@ -33,7 +33,7 @@ echo ""
 # --- Install cage + Chromium (that's it) ---
 echo "[1/5] Installing cage + chromium..."
 apt-get update -qq
-apt-get install -y -qq cage chromium > /dev/null
+apt-get install -y cage chromium
 
 # --- Boot config ---
 echo "[2/5] Configuring boot..."
