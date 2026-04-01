@@ -69,6 +69,17 @@ vm.swappiness=10
 net.core.rmem_max=2500000
 SYSCTL
 
+# --- Suppress Chromium low-RAM warning dialog ---
+mkdir -p /etc/chromium.d
+echo 'export CHROMIUM_FLAGS="${CHROMIUM_FLAGS} --disable-low-end-device-mode"' > /etc/chromium.d/sharescreen
+# Also touch the "launch anyway" flag so the dialog never shows
+mkdir -p "${PI_HOME}/.config/chromium"
+touch "${PI_HOME}/.config/chromium/Lock"
+cat > "${PI_HOME}/.config/chromium/Local State" <<'LOCALSTATE'
+{"user_experience_metrics":{"low_end_device_launch_denied":false}}
+LOCALSTATE
+chown -R "${PI_USER}:${PI_USER}" "${PI_HOME}/.config/chromium"
+
 # --- systemd service ---
 echo "[4/5] Creating systemd service..."
 cat > /etc/systemd/system/sharescreen.service <<SERVICE
@@ -98,6 +109,8 @@ ExecStart=/usr/bin/cage -s -- /usr/bin/chromium \\
   --disable-infobars \\
   --disable-translate \\
   --no-first-run \\
+  --disable-session-crashed-bubble \\
+  --disable-component-update \\
   --ozone-platform=wayland \\
   --autoplay-policy=no-user-gesture-required \\
   --force-webrtc-ip-handling-policy=default_public_interface_only \\
