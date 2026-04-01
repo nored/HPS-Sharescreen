@@ -376,6 +376,10 @@
         iceConfigReady = true;
       });
 
+    // Re-join room on reconnect
+    socket.on('connect', () => {
+      socket.emit('join', { room, type: 'sharer' });
+    });
     socket.emit('join', { room, type: 'sharer' });
 
     socket.on('room-status', ({ hasDisplay }) => {

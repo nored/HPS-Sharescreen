@@ -6,7 +6,10 @@ const path = require('path');
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
-  maxHttpBufferSize: 10 * 1024 * 1024 // 10 MB for image uploads
+  maxHttpBufferSize: 10 * 1024 * 1024, // 10 MB for image uploads
+  pingInterval: 10000,   // Ping every 10s to keep connection alive through proxies
+  pingTimeout: 30000,    // Wait 30s for pong before considering disconnected
+  transports: ['websocket', 'polling'] // Prefer WebSocket, fallback to polling
 });
 
 const PORT = process.env.PORT || 3000;
@@ -30,13 +33,20 @@ app.get('/api/rooms', (req, res) => {
 app.get('/api/ice-config', (req, res) => {
   res.json({
     iceServers: [
+      // Local STUN (also used by TURN)
       { urls: `stun:${TURN_HOST}:${TURN_PORT}` },
+      // TURN relay — UDP and TCP for maximum compatibility
       {
-        urls: `turn:${TURN_HOST}:${TURN_PORT}`,
+        urls: [
+          `turn:${TURN_HOST}:${TURN_PORT}?transport=udp`,
+          `turn:${TURN_HOST}:${TURN_PORT}?transport=tcp`
+        ],
         username: TURN_USER,
         credential: TURN_PASS
       }
-    ]
+    ],
+    // Force relay candidates to be gathered (not just host)
+    iceTransportPolicy: 'all'
   });
 });
 
@@ -120,9 +130,9 @@ io.on('connection', (socket) => {
         hasDisplay: !!rooms[currentRoom].display,
         hasSharer: !!rooms[currentRoom].sharer
       });
-      if (role === 'sharer') {
-        io.to(currentRoom).emit('sharing-stopped');
-      }
+      // Do NOT emit sharing-stopped on disconnect — the WebRTC stream is
+      // peer-to-peer and survives signaling socket outages. The display
+      // will detect the actual stream end via WebRTC connection state.
     }
   });
 });

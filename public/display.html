@@ -273,10 +273,12 @@
         }
       });
 
+    // Re-join room on reconnect (socket.io auto-reconnects but we need to re-register)
+    socket.on('connect', () => {
+      socket.emit('join', { room, type: 'display' });
+    });
     socket.emit('join', { room, type: 'display' });
 
-    // Serialize ICE candidate to a plain object (browser RTCIceCandidate
-    // objects have getters/methods that don't survive JSON.stringify)
     function serializeCandidate(c) {
       return { candidate: c.candidate, sdpMid: c.sdpMid, sdpMLineIndex: c.sdpMLineIndex };
     }
@@ -290,7 +292,6 @@
     });
 
     async function handleOffer(offer) {
-      // Clean up any previous connection
       if (pc) {
         pc.ontrack = null;
         pc.onicecandidate = null;
@@ -321,17 +322,23 @@
         }
       };
 
+      // Only stop on 'failed' — 'disconnected' is often temporary (ICE restart,
+      // network glitch). WebRTC is peer-to-peer; it does NOT depend on the
+      // signaling socket staying connected.
       pc.onconnectionstatechange = () => {
         if (!pc) return;
         const state = pc.connectionState;
         if (state === 'failed') {
+          dbg('WebRTC failed — stopping', 'error');
           stopViewing();
         } else if (state === 'disconnected') {
+          dbg('WebRTC disconnected — waiting 15s for recovery...', 'warn');
           setTimeout(() => {
             if (pc && pc.connectionState === 'disconnected') {
+              dbg('WebRTC did not recover — stopping', 'error');
               stopViewing();
             }
-          }, 5000);
+          }, 15000);
         }
       };
 
@@ -340,10 +347,8 @@
 
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
-        // Send plain object — avoid serialization issues across browsers
         socket.emit('answer', { room, answer: { type: answer.type, sdp: answer.sdp } });
 
-        // Flush any ICE candidates that arrived during negotiation
         for (const c of pendingCandidates) {
           await pc.addIceCandidate(c);
         }
@@ -355,9 +360,7 @@
     }
 
     socket.on('ice-candidate', async ({ candidate }) => {
-      // Filter out empty candidates (Firefox end-of-candidates signal)
       if (!candidate || !candidate.candidate) return;
-      // Queue if we don't have both descriptions set yet
       if (!pc || !pc.remoteDescription || !pc.remoteDescription.type || !pc.localDescription || !pc.localDescription.type) {
         pendingCandidates.push(candidate);
       } else {
@@ -386,14 +389,21 @@
       document.getElementById('status-text').textContent = 'Bild wird angezeigt';
     });
 
+    // Only stop video when we get an explicit stop signal — NOT on socket disconnect.
+    // WebRTC streams are peer-to-peer and survive signaling channel outages.
     socket.on('sharing-stopped', () => {
       stopViewing();
     });
 
     socket.on('room-status', ({ hasSharer }) => {
-      if (!hasSharer) {
+      // Don't reset display if we have an active WebRTC connection
+      // (the sharer might have just reconnected their socket)
+      if (!hasSharer && (!pc || pc.connectionState !== 'connected')) {
         document.getElementById('status-dot').className = 'status-dot';
         document.getElementById('status-text').textContent = 'Warte auf Verbindung...';
+      } else if (!hasSharer && pc && pc.connectionState === 'connected') {
+        // Socket says no sharer but WebRTC is still active — keep streaming
+        dbg('Socket reports no sharer but WebRTC still connected — keeping stream', 'warn');
       } else {
         document.getElementById('status-dot').className = 'status-dot connected';
         document.getElementById('status-text').textContent = 'Verbindung wird hergestellt...';
