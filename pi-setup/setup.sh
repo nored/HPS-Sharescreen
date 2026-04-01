@@ -3,17 +3,10 @@
 # ShareScreen Raspberry Pi Setup
 # =============================================================================
 #
-# For Raspberry Pi OS Lite. Installs cog (WPE WebKit kiosk browser) —
-# a lightweight browser built for embedded devices. Runs directly on
-# the framebuffer via DRM/KMS, no X11 or Wayland compositor needed.
+# For Raspberry Pi OS Lite. Installs cog (WPE WebKit kiosk browser).
 #
 # USAGE:
-#   1. Flash Raspberry Pi OS Lite (use Raspberry Pi Imager —
-#      configure WiFi, SSH, and username in the imager settings)
-#   2. Boot the Pi, SSH in
-#   3. Run:
-#      curl -sL https://raw.githubusercontent.com/nored/HPS-Sharescreen/main/pi-setup/setup.sh -o /tmp/setup.sh && sudo bash /tmp/setup.sh Kiel
-#   4. Pi reboots into ShareScreen automatically
+#   curl -sL https://raw.githubusercontent.com/nored/HPS-Sharescreen/main/pi-setup/setup.sh -o /tmp/setup.sh && sudo bash /tmp/setup.sh Kiel
 #
 # =============================================================================
 
@@ -57,9 +50,9 @@ hdmi_mode=16
 BOOT
 fi
 
-# --- Disable unnecessary services ---
+# --- Disable unnecessary services (keep networking!) ---
 echo "[3/5] Disabling unnecessary services..."
-systemctl disable bluetooth hciuart triggerhappy avahi-daemon ModemManager 2>/dev/null || true
+systemctl disable bluetooth hciuart triggerhappy 2>/dev/null || true
 
 cat > /etc/sysctl.d/99-sharescreen.conf <<SYSCTL
 vm.swappiness=10
@@ -71,16 +64,18 @@ echo "[4/5] Creating systemd service..."
 cat > /etc/systemd/system/sharescreen.service <<SERVICE
 [Unit]
 Description=ShareScreen Kiosk
-After=network-online.target
-Wants=network-online.target
+After=network.target
+Wants=network.target
 
 [Service]
 Type=simple
 User=root
 Environment=WPE_BCMRPI_TOUCH=1
 Environment=COG_PLATFORM_DRM_RENDERER=gles2
-Restart=always
-RestartSec=3
+Restart=on-failure
+RestartSec=5
+StartLimitIntervalSec=60
+StartLimitBurst=5
 
 ExecStart=/usr/bin/cog -P drm --enable-mediasource=true https://share.hotel-park-soltau.de/${ROOM}
 
@@ -90,7 +85,9 @@ SERVICE
 
 systemctl daemon-reload
 systemctl enable sharescreen.service
-systemctl disable getty@tty1.service 2>/dev/null || true
+
+# NEVER disable getty — always keep console + SSH accessible
+# getty@tty1 stays enabled as a fallback
 
 # --- Set hostname ---
 echo "[5/5] Setting hostname..."
