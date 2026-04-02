@@ -23,25 +23,9 @@ const ROOMS = (process.env.ROOMS || 'Kiel,Hamburg,Bremen').split(',').map(r => r
 
 app.use(express.static(path.join(__dirname, 'public')));
 
-// --- MJPEG stream state per room ---
-const mjpegClients = {};  // room -> Set of response objects
-const roomStreaming = {};  // room -> boolean
-
-ROOMS.forEach(room => {
-  mjpegClients[room] = new Set();
-  roomStreaming[room] = false;
-});
-
 // API: list available rooms
 app.get('/api/rooms', (req, res) => {
   res.json(ROOMS);
-});
-
-// API: room status (for Pi polling)
-app.get('/api/status/:room', (req, res) => {
-  const room = req.params.room;
-  if (!ROOMS.includes(room)) return res.status(404).json({ error: 'Room not found' });
-  res.json({ streaming: roomStreaming[room] || false });
 });
 
 // API: ICE server configuration (STUN + TURN)
@@ -59,27 +43,6 @@ app.get('/api/ice-config', (req, res) => {
         credential: TURN_PASS
       }
     ]
-  });
-});
-
-// MJPEG stream endpoint — Pi connects here with mpv/ffplay
-app.get('/:room/stream', (req, res) => {
-  const room = req.params.room;
-  if (!ROOMS.includes(room)) return res.status(404).send('Room not found');
-
-  res.writeHead(200, {
-    'Content-Type': 'multipart/x-mixed-replace; boundary=frame',
-    'Cache-Control': 'no-cache, no-store',
-    'Connection': 'keep-alive',
-    'Pragma': 'no-cache'
-  });
-
-  mjpegClients[room].add(res);
-  console.log(`MJPEG client connected to ${room} (${mjpegClients[room].size} total)`);
-
-  req.on('close', () => {
-    mjpegClients[room].delete(res);
-    console.log(`MJPEG client disconnected from ${room} (${mjpegClients[room].size} remaining)`);
   });
 });
 
@@ -128,7 +91,7 @@ io.on('connection', (socket) => {
     });
   });
 
-  // WebRTC signaling (for browser-to-browser mode)
+  // WebRTC signaling
   socket.on('offer', ({ room, offer }) => {
     socket.to(room).emit('offer', { offer });
   });
@@ -145,38 +108,8 @@ io.on('connection', (socket) => {
     socket.to(room).emit('image-share', { image });
   });
 
-  // MJPEG frame from sharer's browser
-  socket.on('mjpeg-frame', ({ room, frame }) => {
-    if (!mjpegClients[room] || mjpegClients[room].size === 0) return;
-
-    const jpeg = Buffer.from(frame, 'base64');
-    const header = `--frame\r\nContent-Type: image/jpeg\r\nContent-Length: ${jpeg.length}\r\n\r\n`;
-
-    for (const client of mjpegClients[room]) {
-      try {
-        client.write(header);
-        client.write(jpeg);
-        client.write('\r\n');
-      } catch (e) {
-        mjpegClients[room].delete(client);
-      }
-    }
-  });
-
-  socket.on('stream-start', ({ room }) => {
-    if (ROOMS.includes(room)) {
-      roomStreaming[room] = true;
-      io.to(room).emit('room-status', {
-        hasDisplay: !!(rooms[room] && rooms[room].display),
-        hasSharer: true,
-        streaming: true
-      });
-    }
-  });
-
   socket.on('stop-sharing', () => {
     if (currentRoom) {
-      roomStreaming[currentRoom] = false;
       socket.to(currentRoom).emit('sharing-stopped');
     }
   });
@@ -185,9 +118,6 @@ io.on('connection', (socket) => {
     if (currentRoom && rooms[currentRoom]) {
       if (rooms[currentRoom][role] === socket.id) {
         rooms[currentRoom][role] = null;
-      }
-      if (role === 'sharer') {
-        roomStreaming[currentRoom] = false;
       }
       io.to(currentRoom).emit('room-status', {
         hasDisplay: !!rooms[currentRoom].display,
@@ -201,5 +131,4 @@ server.listen(PORT, () => {
   console.log(`ShareScreen server running on port ${PORT}`);
   console.log(`Rooms: ${ROOMS.join(', ')}`);
   console.log(`Base URL: ${BASE_URL}`);
-  console.log(`MJPEG streams at: /<room>/stream`);
 });

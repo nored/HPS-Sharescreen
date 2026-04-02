@@ -436,9 +436,6 @@
 
         stream.getVideoTracks()[0].onended = () => stopSharing();
 
-        // Start MJPEG capture for Pi displays (runs alongside WebRTC)
-        document.getElementById('preview-video').onplaying = () => startMjpeg();
-
         if (displayReady && iceConfigReady) sendOffer();
       } catch (err) {
         if (err.name === 'NotAllowedError' || err.name === 'AbortError') {
@@ -573,38 +570,7 @@
       }
     }
 
-    // --- MJPEG frame capture (for Pi / non-browser displays) ---
-    let mjpegInterval = null;
-    const mjpegCanvas = document.createElement('canvas');
-    const mjpegCtx = mjpegCanvas.getContext('2d');
-
-    function startMjpeg() {
-      if (mjpegInterval) return;
-      const video = document.getElementById('preview-video');
-      socket.emit('stream-start', { room });
-
-      mjpegInterval = setInterval(() => {
-        if (!video.videoWidth || video.paused) return;
-        // Scale down for bandwidth — 1280px wide max
-        const scale = Math.min(1, 1280 / video.videoWidth);
-        mjpegCanvas.width = Math.round(video.videoWidth * scale);
-        mjpegCanvas.height = Math.round(video.videoHeight * scale);
-        mjpegCtx.drawImage(video, 0, 0, mjpegCanvas.width, mjpegCanvas.height);
-        const dataUrl = mjpegCanvas.toDataURL('image/jpeg', 0.7);
-        const base64 = dataUrl.split(',')[1];
-        socket.emit('mjpeg-frame', { room, frame: base64 });
-      }, 100); // ~10 FPS
-    }
-
-    function stopMjpeg() {
-      if (mjpegInterval) {
-        clearInterval(mjpegInterval);
-        mjpegInterval = null;
-      }
-    }
-
     function stopSharing() {
-      stopMjpeg();
       negotiating = false;
       pendingCandidates = [];
       if (stream) {
