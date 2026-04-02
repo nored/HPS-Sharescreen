@@ -426,7 +426,7 @@
       try {
         // Use basic constraints — cursor/audio support varies by browser
         stream = await navigator.mediaDevices.getDisplayMedia({
-          video: true,
+          video: { width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } },
           audio: true
         });
 
@@ -559,10 +559,27 @@
         }
       };
 
+      // Prefer H264 over VP8/VP9 — Pi can hardware decode H264
+      try {
+        const transceivers = pc.getTransceivers();
+        for (const t of transceivers) {
+          if (t.sender && t.sender.track && t.sender.track.kind === 'video') {
+            const codecs = RTCRtpSender.getCapabilities('video').codecs;
+            const h264 = codecs.filter(c => c.mimeType === 'video/H264');
+            const rest = codecs.filter(c => c.mimeType !== 'video/H264');
+            if (h264.length > 0) {
+              t.setCodecPreferences([...h264, ...rest]);
+              dbg('Codec preference set: H264 first', 'webrtc');
+            }
+          }
+        }
+      } catch (e) {
+        dbg('Could not set codec preferences: ' + e.message, 'warn');
+      }
+
       try {
         const offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
-        // Send plain object — Firefox's RTCSessionDescription doesn't serialize cleanly
         socket.emit('offer', { room, offer: { type: offer.type, sdp: offer.sdp } });
       } catch (err) {
         console.error('Failed to create offer:', err);

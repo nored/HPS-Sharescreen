@@ -188,8 +188,10 @@ class WebRTCReceiver:
 
         print(f'Incoming stream pad: {pad.get_name()}')
 
-        # Build decode chain: decodebin -> videoconvert -> kmssink
+        # Use decodebin which auto-selects hardware decoders (v4l2h264dec)
+        # when available, with higher rank than software decoders
         decodebin = Gst.ElementFactory.make('decodebin', None)
+        decodebin.set_property('force-sw-decoders', False)
         decodebin.connect('pad-added', self._on_decoded_pad)
         self.pipe.add(decodebin)
         decodebin.sync_state_with_parent()
@@ -206,16 +208,22 @@ class WebRTCReceiver:
         print(f'Decoded pad caps: {struct_name}')
 
         if 'video/' in struct_name:
+            # Scale to fit display, convert colorspace, output to DRM
+            scale = Gst.ElementFactory.make('videoscale', None)
             convert = Gst.ElementFactory.make('videoconvert', None)
             sink = Gst.ElementFactory.make('kmssink', None)
+            sink.set_property('force-modesetting', True)
 
+            self.pipe.add(scale)
             self.pipe.add(convert)
             self.pipe.add(sink)
 
+            scale.sync_state_with_parent()
             convert.sync_state_with_parent()
             sink.sync_state_with_parent()
 
-            pad.link(convert.get_static_pad('sink'))
+            pad.link(scale.get_static_pad('sink'))
+            scale.link(convert)
             convert.link(sink)
 
             self._hide_qr()
@@ -254,13 +262,18 @@ class WebRTCReceiver:
             print(f'Could not show QR: {e}')
 
     def _hide_qr(self):
-        if self.qr_process and self.qr_process.poll() is None:
-            self.qr_process.terminate()
+        # Kill ALL fbi processes
+        subprocess.run(['killall', '-9', 'fbi'], capture_output=True)
+        if self.qr_process:
+            try:
+                self.qr_process.kill()
+            except:
+                pass
             self.qr_process = None
         # Clear framebuffer
         try:
-            with open('/dev/fb0', 'wb') as fb:
-                fb.write(b'\x00' * 1024 * 768 * 4)
+            subprocess.run(['dd', 'if=/dev/zero', 'of=/dev/fb0', 'bs=1M', 'count=10'],
+                          capture_output=True, timeout=3)
         except:
             pass
 
