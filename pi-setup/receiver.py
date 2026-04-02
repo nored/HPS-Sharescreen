@@ -1,13 +1,11 @@
 #!/usr/bin/env python3
 """
 ShareScreen WebRTC Receiver for Raspberry Pi
-Connects to the signaling server via Socket.IO, receives WebRTC video,
-and displays it fullscreen on the framebuffer via kmssink.
+Receives WebRTC video via GStreamer webrtcbin, displays on screen via kmssink.
 """
 
 import sys
 import os
-import json
 import threading
 import time
 import subprocess
@@ -18,102 +16,140 @@ gi.require_version('GstWebRTC', '1.0')
 gi.require_version('GstSdp', '1.0')
 from gi.repository import Gst, GstWebRTC, GstSdp, GLib
 
-# We use python-socketio client
-try:
-    import socketio
-except ImportError:
-    # Try installing it
-    os.system('pip3 install --break-system-packages python-socketio[client] 2>/dev/null || pip3 install python-socketio[client]')
-    import socketio
+import socketio
 
 Gst.init(None)
 
 ROOM = sys.argv[1] if len(sys.argv) > 1 else open(os.path.expanduser('~/.sharescreen-room')).read().strip()
 SERVER = os.environ.get('SHARESCREEN_SERVER', 'https://share.hotel-park-soltau.de')
+CONNECTOR_ID = int(os.environ.get('KMS_CONNECTOR_ID', '33'))
 
-print(f'ShareScreen receiver for room: {ROOM}')
+print(f'Room: {ROOM}')
 print(f'Server: {SERVER}')
+print(f'KMS connector: {CONNECTOR_ID}')
 
 
 class WebRTCReceiver:
     def __init__(self):
         self.pipe = None
         self.webrtc = None
-        self.sio = socketio.Client(reconnection=True, reconnection_delay=2)
         self.loop = GLib.MainLoop()
-        self.qr_process = None
-        self.streaming = False
-
+        self.sio = socketio.Client(reconnection=True, reconnection_delay=2)
         self._setup_socketio()
+
+        # Show idle screen (test pattern with room name via GStreamer)
+        self.idle_pipe = None
+        self._show_idle()
 
     def _setup_socketio(self):
         @self.sio.event
         def connect():
-            print('Socket.IO connected')
+            print('Connected to server')
             self.sio.emit('join', {'room': ROOM, 'type': 'display'})
 
         @self.sio.event
         def disconnect():
-            print('Socket.IO disconnected')
+            print('Disconnected from server')
 
         @self.sio.on('offer')
         def on_offer(data):
             print('Received offer')
-            offer_sdp = data['offer']['sdp']
-            self._handle_offer(offer_sdp)
+            self._handle_offer(data['offer']['sdp'])
 
         @self.sio.on('ice-candidate')
         def on_ice(data):
-            candidate = data.get('candidate')
-            if candidate and candidate.get('candidate'):
-                self._add_ice_candidate(candidate)
+            c = data.get('candidate')
+            if c and c.get('candidate') and self.webrtc:
+                self.webrtc.emit('add-ice-candidate',
+                    c.get('sdpMLineIndex', 0), c['candidate'])
 
         @self.sio.on('sharing-stopped')
         def on_stop():
             print('Sharing stopped')
             self._stop_pipeline()
-            self._show_qr()
+            self._show_idle()
 
-        @self.sio.on('ready')
-        def on_ready():
-            print('Ready signal received')
+    def _stop_pipeline(self):
+        if self.pipe:
+            self.pipe.set_state(Gst.State.NULL)
+            # Wait for state change to complete and release DRM
+            self.pipe.get_state(Gst.CLOCK_TIME_NONE)
+            self.pipe = None
+            self.webrtc = None
+            print('Pipeline stopped')
 
-    def _create_pipeline(self):
-        # Stop existing pipeline
+    def _stop_idle(self):
+        if self.idle_pipe:
+            self.idle_pipe.set_state(Gst.State.NULL)
+            self.idle_pipe.get_state(Gst.CLOCK_TIME_NONE)
+            self.idle_pipe = None
+
+    def _show_idle(self):
+        """Show idle screen via GStreamer"""
+        self._stop_idle()
+        try:
+            self.idle_pipe = Gst.parse_launch(
+                f'videotestsrc pattern=black ! '
+                f'video/x-raw,format=BGRx,width=1920,height=1080,framerate=1/1 ! '
+                f'textoverlay text="Raum {ROOM}\\n\\nQR-Code scannen zum Teilen\\n{SERVER}/{ROOM}/share" '
+                f'font-desc="Sans Bold 40" valignment=center halignment=center ! '
+                f'kmssink connector-id={CONNECTOR_ID} force-modesetting=true restore-crtc=false sync=false'
+            )
+            self.idle_pipe.set_state(Gst.State.PLAYING)
+            print('Idle screen shown')
+        except Exception as e:
+            print(f'Could not show idle screen: {e}')
+
+    def _handle_offer(self, sdp_text):
+        # Clean up everything before new connection
+        self._stop_idle()
         self._stop_pipeline()
+        time.sleep(0.2)  # Brief pause to release DRM master
 
-        self.pipe = Gst.parse_launch(
-            'webrtcbin name=webrtc bundle-policy=max-bundle '
-            'stun-server=stun://stun.l.google.com:19302 '
-            '! queue '
-            '! decodebin '
-            '! videoconvert '
-            '! kmssink'
-        )
+        self.pipe = Gst.Pipeline.new('receiver')
 
-        self.webrtc = self.pipe.get_by_name('webrtc')
+        self.webrtc = Gst.ElementFactory.make('webrtcbin', 'webrtc')
+        self.webrtc.set_property('bundle-policy',
+            GstWebRTC.WebRTCBundlePolicy.MAX_BUNDLE)
+        self.webrtc.set_property('stun-server', 'stun://stun.l.google.com:19302')
+        self.webrtc.set_property('latency', 0)  # Minimize jitter buffer
+        self.pipe.add(self.webrtc)
 
-        # Handle incoming streams
-        self.webrtc.connect('pad-added', self._on_pad_added)
         self.webrtc.connect('on-ice-candidate', self._on_ice_candidate)
+        self.webrtc.connect('pad-added', self._on_incoming_stream)
 
-        self.pipe.set_state(Gst.State.READY)
+        self.pipe.set_state(Gst.State.PLAYING)
 
-    def _on_pad_added(self, webrtc, pad):
-        if pad.direction != Gst.PadDirection.SRC:
+        # Set remote offer
+        res, sdpmsg = GstSdp.SDPMessage.new_from_text(sdp_text)
+        if res != GstSdp.SDPResult.OK:
+            print(f'Failed to parse SDP')
             return
 
-        print(f'New pad: {pad.get_name()}')
-        decodebin = self.pipe.get_by_name('decodebin0')
-        if not decodebin:
-            # Dynamically link: webrtcbin src -> queue -> decodebin -> videoconvert -> kmssink
-            # We need to rebuild the pipeline for dynamic pads
-            pass
+        offer = GstWebRTC.WebRTCSessionDescription.new(
+            GstWebRTC.WebRTCSDPType.OFFER, sdpmsg)
+        promise = Gst.Promise.new_with_change_func(self._on_offer_set)
+        self.webrtc.emit('set-remote-description', offer, promise)
 
-        # Connect to the decode pipeline
-        sink_pad = self.pipe.get_by_name('queue0')
-        if sink_pad:
-            pad.link(sink_pad.get_static_pad('sink'))
+    def _on_offer_set(self, promise):
+        promise.wait()
+        promise = Gst.Promise.new_with_change_func(self._on_answer_created)
+        self.webrtc.emit('create-answer', None, promise)
+
+    def _on_answer_created(self, promise):
+        promise.wait()
+        reply = promise.get_reply()
+        answer = reply.get_value('answer')
+        promise = Gst.Promise.new()
+        self.webrtc.emit('set-local-description', answer, promise)
+        promise.interrupt()
+
+        sdp_text = answer.sdp.as_text()
+        print('Sending answer')
+        self.sio.emit('answer', {
+            'room': ROOM,
+            'answer': {'type': 'answer', 'sdp': sdp_text}
+        })
 
     def _on_ice_candidate(self, webrtc, mline_index, candidate):
         if candidate:
@@ -126,182 +162,53 @@ class WebRTCReceiver:
                 }
             })
 
-    def _handle_offer(self, sdp_text):
-        print('Handling offer...')
-        self._hide_qr()
-
-        # Build a proper pipeline with dynamic pad handling
-        self._stop_pipeline()
-
-        self.pipe = Gst.Pipeline.new('receiver')
-
-        # WebRTC bin
-        self.webrtc = Gst.ElementFactory.make('webrtcbin', 'webrtc')
-        self.webrtc.set_property('bundle-policy',
-            GstWebRTC.WebRTCBundlePolicy.MAX_BUNDLE)
-        self.webrtc.set_property('stun-server', 'stun://stun.l.google.com:19302')
-        self.pipe.add(self.webrtc)
-
-        self.webrtc.connect('on-ice-candidate', self._on_ice_candidate)
-        self.webrtc.connect('pad-added', self._on_incoming_stream)
-
-        self.pipe.set_state(Gst.State.PLAYING)
-
-        # Set remote description (offer)
-        res, sdpmsg = GstSdp.SDPMessage.new_from_text(sdp_text)
-        if res != GstSdp.SDPResult.OK:
-            print(f'Failed to parse SDP: {res}')
-            return
-
-        offer = GstWebRTC.WebRTCSessionDescription.new(
-            GstWebRTC.WebRTCSDPType.OFFER, sdpmsg)
-        promise = Gst.Promise.new_with_change_func(self._on_offer_set)
-        self.webrtc.emit('set-remote-description', offer, promise)
-
-    def _on_offer_set(self, promise):
-        promise.wait()
-        reply = promise.get_reply()
-        # Create answer
-        promise = Gst.Promise.new_with_change_func(self._on_answer_created)
-        self.webrtc.emit('create-answer', None, promise)
-
-    def _on_answer_created(self, promise):
-        promise.wait()
-        reply = promise.get_reply()
-        answer = reply.get_value('answer')
-        promise = Gst.Promise.new()
-        self.webrtc.emit('set-local-description', answer, promise)
-        promise.interrupt()
-
-        # Send answer to signaling server
-        sdp_text = answer.sdp.as_text()
-        print('Sending answer')
-        self.sio.emit('answer', {
-            'room': ROOM,
-            'answer': {'type': 'answer', 'sdp': sdp_text}
-        })
-        self.streaming = True
-
     def _on_incoming_stream(self, webrtc, pad):
         if pad.direction != Gst.PadDirection.SRC:
             return
+        print(f'Incoming stream: {pad.get_name()}')
 
-        print(f'Incoming stream pad: {pad.get_name()}')
+        # Direct low-latency pipeline — no decodebin buffering
+        # RTP H264 -> parse -> hardware decode -> convert -> display
+        depay = Gst.ElementFactory.make('rtph264depay', None)
+        parse = Gst.ElementFactory.make('h264parse', None)
+        decoder = Gst.ElementFactory.make('v4l2h264dec', None)
 
-        # Use decodebin which auto-selects hardware decoders (v4l2h264dec)
-        # when available, with higher rank than software decoders
-        decodebin = Gst.ElementFactory.make('decodebin', None)
-        decodebin.set_property('force-sw-decoders', False)
-        decodebin.connect('pad-added', self._on_decoded_pad)
-        self.pipe.add(decodebin)
-        decodebin.sync_state_with_parent()
-        pad.link(decodebin.get_static_pad('sink'))
+        # v4l2convert to handle DMABuf, no scaling — let kmssink handle it
+        convert = Gst.ElementFactory.make('v4l2convert', None)
+        # Cap output to display resolution so v4l2convert doesn't upscale
+        capsfilter = Gst.ElementFactory.make('capsfilter', None)
+        capsfilter.set_property('caps', Gst.Caps.from_string(
+            'video/x-raw,format=BGRx'))
 
-    def _on_decoded_pad(self, decodebin, pad):
-        caps = pad.get_current_caps()
-        if not caps:
-            caps = pad.query_caps(None)
-        if not caps or caps.get_size() == 0:
-            return
+        sink = Gst.ElementFactory.make('kmssink', None)
+        sink.set_property('connector-id', CONNECTOR_ID)
+        sink.set_property('force-modesetting', True)
+        sink.set_property('sync', False)
+        sink.set_property('can-scale', True)
 
-        struct_name = caps.to_string()
-        print(f'Decoded pad caps: {struct_name}')
+        elements = [depay, parse, decoder, convert, capsfilter, sink]
+        for el in elements:
+            self.pipe.add(el)
+            el.sync_state_with_parent()
 
-        if 'video/' in struct_name:
-            # Scale to fit display, convert colorspace, output to DRM
-            scale = Gst.ElementFactory.make('videoscale', None)
-            convert = Gst.ElementFactory.make('videoconvert', None)
-            sink = Gst.ElementFactory.make('kmssink', None)
-            sink.set_property('force-modesetting', True)
+        pad.link(depay.get_static_pad('sink'))
+        for i in range(len(elements) - 1):
+            elements[i].link(elements[i + 1])
 
-            self.pipe.add(scale)
-            self.pipe.add(convert)
-            self.pipe.add(sink)
-
-            scale.sync_state_with_parent()
-            convert.sync_state_with_parent()
-            sink.sync_state_with_parent()
-
-            pad.link(scale.get_static_pad('sink'))
-            scale.link(convert)
-            convert.link(sink)
-
-            self._hide_qr()
-            print('Video pipeline connected — displaying on screen')
-
-    def _add_ice_candidate(self, candidate):
-        if self.webrtc:
-            sdp_mline_index = candidate.get('sdpMLineIndex', 0)
-            candidate_str = candidate.get('candidate', '')
-            if candidate_str:
-                self.webrtc.emit('add-ice-candidate', sdp_mline_index, candidate_str)
-
-    def _stop_pipeline(self):
-        if self.pipe:
-            self.pipe.set_state(Gst.State.NULL)
-            self.pipe = None
-            self.webrtc = None
-        self.streaming = False
-
-    def _show_qr(self):
-        if self.qr_process and self.qr_process.poll() is None:
-            return  # Already showing
-        qr_path = '/tmp/sharescreen-qr.png'
-        if not os.path.exists(qr_path):
-            subprocess.run([
-                'qrencode', '-o', qr_path, '-s', '10', '-m', '2',
-                '--foreground=2a2a29',
-                f'{SERVER}/{ROOM}/share'
-            ])
-        try:
-            self.qr_process = subprocess.Popen(
-                ['fbi', '-T', '1', '-d', '/dev/fb0', '--noverbose', '-a', qr_path],
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-            )
-        except Exception as e:
-            print(f'Could not show QR: {e}')
-
-    def _hide_qr(self):
-        # Kill ALL fbi processes
-        subprocess.run(['killall', '-9', 'fbi'], capture_output=True)
-        if self.qr_process:
-            try:
-                self.qr_process.kill()
-            except:
-                pass
-            self.qr_process = None
-        # Clear framebuffer
-        try:
-            subprocess.run(['dd', 'if=/dev/zero', 'of=/dev/fb0', 'bs=1M', 'count=10'],
-                          capture_output=True, timeout=3)
-        except:
-            pass
+        print('Pipeline connected')
 
     def run(self):
-        self._show_qr()
+        loop_thread = threading.Thread(target=self.loop.run, daemon=True)
+        loop_thread.start()
 
-        # Connect to server
         while True:
             try:
                 print(f'Connecting to {SERVER}...')
                 self.sio.connect(SERVER, transports=['websocket', 'polling'])
-                break
+                self.sio.wait()
             except Exception as e:
-                print(f'Connection failed: {e}, retrying in 5s...')
+                print(f'Connection error: {e}, retrying in 5s...')
                 time.sleep(5)
-
-        # Run GLib main loop in a thread
-        loop_thread = threading.Thread(target=self.loop.run, daemon=True)
-        loop_thread.start()
-
-        # Keep running
-        try:
-            self.sio.wait()
-        except KeyboardInterrupt:
-            print('Shutting down...')
-            self._stop_pipeline()
-            self._hide_qr()
-            self.sio.disconnect()
 
 
 if __name__ == '__main__':
