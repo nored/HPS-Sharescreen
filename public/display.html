@@ -240,7 +240,7 @@
   <script src="/debug.js"></script>
 
   <script>
-    const room = window.location.pathname.replace('/', '');
+    const room = window.location.pathname.split('/')[1];
     const baseUrl = window.location.origin;
     const shareUrl = `${baseUrl}/${room}/share`;
 
