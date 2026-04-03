@@ -29,7 +29,6 @@
       align-items: center;
       justify-content: center;
       height: 100vh;
-      gap: 80px;
       padding: 60px;
     }
 
@@ -125,10 +124,13 @@
     }
 
     .qr-side {
+      position: fixed;
+      bottom: 40px;
+      right: 40px;
       display: flex;
       flex-direction: column;
       align-items: center;
-      gap: 16px;
+      gap: 12px;
     }
 
     .qr-container {
@@ -242,10 +244,10 @@
       <div class="room-name" id="room-name"></div>
     </div>
     <div class="qr-side">
+      <div class="qr-label">oder QR-Code scannen</div>
       <div class="qr-container">
         <canvas id="qr-canvas"></canvas>
       </div>
-      <div class="qr-label">oder QR-Code scannen</div>
     </div>
   </div>
 
