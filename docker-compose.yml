@@ -16,10 +16,3 @@ services:
       - TURN_USER=sharescreen
       - TURN_PASS=hotelparkshare2024
 
-  coturn:
-    image: coturn/coturn
-    container_name: hps-turn
-    restart: unless-stopped
-    network_mode: host
-    volumes:
-      - ./turnserver.conf:/etc/turnserver.conf:ro
