@@ -3,7 +3,8 @@ const path = require('path');
 const fs = require('fs');
 
 const PORT = process.env.PORT || '3000';
-const BASE_URL = process.env.IDLE_BASE_URL || `http://localhost:${PORT}`;
+const RENDER_URL = process.env.IDLE_BASE_URL || `http://localhost:${PORT}`;
+const PUBLIC_URL = process.env.BASE_URL || 'https://share.hotel-park-soltau.de';
 const EXEC_PATH = process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium-browser';
 
 let browser = null;
@@ -25,14 +26,28 @@ async function renderIdleImage(room) {
   await page.setViewport({ width: 1920, height: 1080, deviceScaleFactor: 1 });
 
   try {
-    await page.goto(`${BASE_URL}/${room}`, { waitUntil: 'networkidle0', timeout: 15000 });
+    await page.goto(`${RENDER_URL}/${room}`, { waitUntil: 'networkidle0', timeout: 15000 });
 
-    await page.evaluate(() => {
+    // Fix URLs to show real public URL instead of localhost
+    await page.evaluate((publicUrl, roomName) => {
+      const shareUrl = `${publicUrl}/${roomName}/share`;
+      document.getElementById('share-url').textContent = shareUrl;
+      // Re-render QR code with correct URL
+      if (typeof QRious !== 'undefined') {
+        new QRious({
+          element: document.getElementById('qr-canvas'),
+          value: shareUrl,
+          size: 280,
+          level: 'M',
+          foreground: '#2a2a29',
+          background: '#ffffff'
+        });
+      }
       document.querySelector('.status-bar')?.remove();
       document.getElementById('video-screen')?.remove();
       document.getElementById('image-screen')?.remove();
       document.querySelectorAll('script').forEach(s => s.remove());
-    });
+    }, PUBLIC_URL, room);
 
     await new Promise(r => setTimeout(r, 300));
     return await page.screenshot({ type: 'png' });
