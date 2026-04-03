@@ -44,7 +44,7 @@ async function renderIdleImage(room) {
         new QRious({
           element: document.getElementById('qr-canvas'),
           value: shareUrl,
-          size: 280,
+          size: 200,
           level: 'M',
           foreground: '#2a2a29',
           background: '#ffffff'

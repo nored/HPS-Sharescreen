@@ -23,22 +23,28 @@
       overflow: hidden;
     }
 
-    /* Idle screen: QR code + instructions */
+    /* Idle screen: URL-centered layout */
     #idle-screen {
       display: flex;
-      flex-direction: column;
       align-items: center;
       justify-content: center;
       height: 100vh;
-      gap: 40px;
-      padding: 40px;
+      gap: 80px;
+      padding: 60px;
     }
 
     #idle-screen.hidden { display: none; }
 
+    .main-content {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 36px;
+      flex: 1;
+    }
+
     .logo {
-      width: 280px;
-      margin-bottom: 10px;
+      width: 300px;
     }
 
     .room-name {
@@ -49,27 +55,39 @@
       font-weight: 300;
     }
 
-    .qr-container {
-      background: #fff;
-      border-radius: 20px;
-      padding: 30px;
-      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
-    }
-
-    #qr-canvas {
-      display: block;
-    }
-
-    .instructions {
+    .share-url {
+      background: rgba(255,255,255,0.08);
+      border: 2px solid var(--primary);
+      border-radius: 16px;
+      padding: 24px 48px;
       text-align: center;
-      max-width: 600px;
     }
 
-    .instructions h2 {
-      font-size: 1.8rem;
-      font-weight: 400;
-      margin-bottom: 24px;
+    .share-url-label {
+      font-size: 1.1rem;
+      color: #999;
+      margin-bottom: 12px;
+    }
+
+    .share-url-text {
+      font-size: 2.6rem;
+      font-weight: 600;
       color: var(--primary-light);
+      font-family: 'Courier New', monospace;
+      letter-spacing: 1px;
+    }
+
+    .pin-display {
+      font-size: 2.2rem;
+      font-weight: 600;
+      color: #fff;
+      letter-spacing: 8px;
+    }
+
+    .pin-display span {
+      color: var(--primary-light);
+      font-family: 'Courier New', monospace;
+      font-size: 2.6rem;
     }
 
     .steps {
@@ -104,29 +122,26 @@
       line-height: 1.4;
     }
 
-    .pin-display {
-      margin-top: 30px;
-      font-size: 2rem;
-      font-weight: 600;
-      color: #fff;
-      letter-spacing: 8px;
+    .qr-side {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
     }
 
-    .pin-display span {
-      color: var(--primary-light);
-      font-family: 'Courier New', monospace;
-      font-size: 2.4rem;
+    .qr-container {
+      background: #fff;
+      border-radius: 16px;
+      padding: 20px;
     }
 
-    .url-hint {
-      margin-top: 12px;
-      font-size: 1rem;
-      color: #888;
+    #qr-canvas {
+      display: block;
     }
 
-    .url-hint span {
-      color: var(--primary-light);
-      font-weight: 500;
+    .qr-label {
+      font-size: 0.9rem;
+      color: #666;
     }
 
     /* Video stream (active sharing) */
@@ -201,29 +216,34 @@
   </div>
 
   <div id="idle-screen">
-    <img src="/logo.svg" alt="Hotel Park Soltau" class="logo">
-    <div class="room-name" id="room-name"></div>
-    <div class="qr-container">
-      <canvas id="qr-canvas"></canvas>
-    </div>
-    <div class="instructions">
-      <h2>Bildschirm teilen</h2>
+    <div class="main-content">
+      <img src="/logo.svg" alt="Hotel Park Soltau" class="logo">
+      <div class="room-name" id="room-name"></div>
+      <div class="share-url">
+        <div class="share-url-label">Auf dem Laptop &ouml;ffnen:</div>
+        <div class="share-url-text" id="share-url"></div>
+      </div>
+      <div class="pin-display">PIN: <span id="room-pin">----</span></div>
       <div class="steps">
         <div class="step">
           <div class="step-number">1</div>
-          <div class="step-text">QR-Code<br>scannen</div>
+          <div class="step-text">URL im<br>Browser &ouml;ffnen</div>
         </div>
         <div class="step">
           <div class="step-number">2</div>
-          <div class="step-text">Bildschirm<br>freigeben</div>
+          <div class="step-text">PIN<br>eingeben</div>
         </div>
         <div class="step">
           <div class="step-number">3</div>
-          <div class="step-text">Pr&auml;sentation<br>starten</div>
+          <div class="step-text">Bildschirm<br>freigeben</div>
         </div>
       </div>
-      <div class="pin-display">PIN: <span id="room-pin">----</span></div>
-      <div class="url-hint">Oder besuchen Sie: <span id="share-url"></span></div>
+    </div>
+    <div class="qr-side">
+      <div class="qr-container">
+        <canvas id="qr-canvas"></canvas>
+      </div>
+      <div class="qr-label">oder QR-Code scannen</div>
     </div>
   </div>
 
@@ -269,11 +289,11 @@
       setTimeout(refreshPin, 24 * 60 * 60 * 1000);
     }, msUntilMidnight());
 
-    // Generate QR code
+    // Generate QR code (smaller — secondary to URL)
     const qr = new QRious({
       element: document.getElementById('qr-canvas'),
       value: shareUrl,
-      size: 280,
+      size: 200,
       level: 'M',
       foreground: '#2a2a29',
       background: '#ffffff'
