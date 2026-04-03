@@ -2,24 +2,21 @@ FROM node:20-alpine
 
 WORKDIR /app
 
+# Chromium for idle screen rendering
+RUN apk add --no-cache chromium font-noto font-noto-emoji curl bash
+
 COPY package.json package-lock.json* ./
 RUN npm ci --omit=dev
 
-COPY . .
-
-# --- Generate idle screen images with Bun + Playwright ---
-RUN apk add --no-cache curl bash font-noto font-noto-emoji \
-  && curl -fsSL https://bun.sh/install | bash \
+# Install Bun + Playwright (uses system Chromium)
+RUN curl -fsSL https://bun.sh/install | bash \
   && export PATH="/root/.bun/bin:$PATH" \
-  && bun install playwright \
-  && bunx playwright install --with-deps chromium \
-  && mkdir -p public/idle \
-  && node server.js & sleep 2 \
-  && bun idle-image.ts \
-  && kill %1 2>/dev/null || true \
-  && rm -rf /root/.cache/ms-playwright \
-  && apk del curl bash
+  && bun install playwright
+
+ENV PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium-browser
+
+COPY . .
 
 EXPOSE 3000
 
-CMD ["node", "server.js"]
+CMD ["sh", "start.sh"]

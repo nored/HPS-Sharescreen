@@ -7,9 +7,14 @@ const OUTPUT_DIR = process.env.OUTPUT_DIR || "public/idle";
 const WIDTH = 1920;
 const HEIGHT = 1080;
 
-await Bun.write(`${OUTPUT_DIR}/.gitkeep`, "");
+const execPath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH;
 
-const browser = await chromium.launch();
+await Bun.$`mkdir -p ${OUTPUT_DIR}`;
+
+const browser = await chromium.launch({
+  executablePath: execPath || undefined,
+  args: ["--no-sandbox", "--disable-setuid-sandbox"],
+});
 const context = await browser.newContext({
   viewport: { width: WIDTH, height: HEIGHT },
   deviceScaleFactor: 1,
@@ -27,11 +32,9 @@ for (const room of ROOMS) {
     document.querySelector(".status-bar")?.remove();
     document.getElementById("video-screen")?.remove();
     document.getElementById("image-screen")?.remove();
-    // Remove all script tags (socket.io, etc)
     document.querySelectorAll("script").forEach((s) => s.remove());
   });
 
-  // Wait for QR code to render
   await page.waitForTimeout(500);
 
   const path = `${OUTPUT_DIR}/${room}.png`;
