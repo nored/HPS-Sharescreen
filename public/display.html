@@ -104,8 +104,22 @@
       line-height: 1.4;
     }
 
-    .url-hint {
+    .pin-display {
       margin-top: 30px;
+      font-size: 2rem;
+      font-weight: 600;
+      color: #fff;
+      letter-spacing: 8px;
+    }
+
+    .pin-display span {
+      color: var(--primary-light);
+      font-family: 'Courier New', monospace;
+      font-size: 2.4rem;
+    }
+
+    .url-hint {
+      margin-top: 12px;
       font-size: 1rem;
       color: #888;
     }
@@ -208,6 +222,7 @@
           <div class="step-text">Pr&auml;sentation<br>starten</div>
         </div>
       </div>
+      <div class="pin-display">PIN: <span id="room-pin">----</span></div>
       <div class="url-hint">Oder besuchen Sie: <span id="share-url"></span></div>
     </div>
   </div>
@@ -232,6 +247,27 @@
     // Set room name
     document.getElementById('room-name').textContent = `Raum ${room}`;
     document.getElementById('share-url').textContent = shareUrl;
+
+    // Fetch and display room PIN
+    fetch(`/api/pin/${room}`)
+      .then(r => r.json())
+      .then(({ pin }) => { document.getElementById('room-pin').textContent = pin; })
+      .catch(() => {});
+
+    // Refresh PIN at midnight
+    function msUntilMidnight() {
+      const now = new Date();
+      const midnight = new Date(now);
+      midnight.setHours(24, 0, 0, 0);
+      return midnight - now;
+    }
+    setTimeout(function refreshPin() {
+      fetch(`/api/pin/${room}`)
+        .then(r => r.json())
+        .then(({ pin }) => { document.getElementById('room-pin').textContent = pin; })
+        .catch(() => {});
+      setTimeout(refreshPin, 24 * 60 * 60 * 1000);
+    }, msUntilMidnight());
 
     // Generate QR code
     const qr = new QRious({

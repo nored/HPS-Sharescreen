@@ -260,6 +260,23 @@
     <div class="room-badge" id="room-badge"></div>
 
     <div class="card">
+      <!-- State: PIN entry -->
+      <div class="state" id="state-pin">
+        <div class="icon icon-share">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#95a321" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+            <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+          </svg>
+        </div>
+        <h1>Raum-PIN eingeben</h1>
+        <p class="hint">Der PIN wird auf dem Display im Raum angezeigt.</p>
+        <input type="tel" id="pin-input" maxlength="4" pattern="[0-9]*" inputmode="numeric"
+          placeholder="0000" autocomplete="off"
+          style="text-align:center;font-size:2rem;letter-spacing:12px;padding:16px;border:2px solid #ddd;border-radius:12px;width:180px;font-family:'Courier New',monospace;outline:none;">
+        <div id="pin-error" style="color:#d32f2f;font-size:0.9rem;display:none">Falscher PIN</div>
+        <button class="btn" onclick="submitPin()">Weiter</button>
+      </div>
+
       <!-- State: Desktop ready to share -->
       <div class="state" id="state-ready">
         <div class="icon icon-share">
@@ -367,19 +384,48 @@
 
     const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
     const canScreenShare = !!navigator.mediaDevices?.getDisplayMedia;
+    let roomPin = null;
 
-    if (isTouchDevice) {
-      // Phone, tablet, iPad — show mobile UI with all options
-      showState('mobile');
-      if (canScreenShare) {
-        document.getElementById('mobile-screen-share')?.classList.add('visible');
+    // Start at PIN entry
+    showState('pin');
+
+    // Auto-focus and submit on 4 digits
+    const pinInput = document.getElementById('pin-input');
+    pinInput.addEventListener('input', () => {
+      document.getElementById('pin-error').style.display = 'none';
+      pinInput.style.borderColor = '#ddd';
+      if (pinInput.value.length === 4) submitPin();
+    });
+    pinInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') submitPin();
+    });
+    setTimeout(() => pinInput.focus(), 100);
+
+    function submitPin() {
+      const pin = pinInput.value.trim();
+      if (pin.length !== 4) return;
+      roomPin = pin;
+
+      // Connect socket and try to join — server validates PIN
+      if (!socket.connected) {
+        socket.connect();
+      } else {
+        socket.emit('join', { room, type: 'sharer', pin: roomPin });
       }
-    } else {
-      // Desktop — just the screen share button
-      showState('ready');
     }
 
-    const socket = io();
+    function showShareUI() {
+      if (isTouchDevice) {
+        showState('mobile');
+        if (canScreenShare) {
+          document.getElementById('mobile-screen-share')?.classList.add('visible');
+        }
+      } else {
+        showState('ready');
+      }
+    }
+
+    const socket = io({ autoConnect: false });
     if (window.dbgWatchSocket) dbgWatchSocket(socket);
     let pc = null;
     let stream = null;
@@ -406,10 +452,25 @@
     // Join room on every (re)connect
     socket.on('connect', () => {
       dbg(`Socket connected: ${socket.id}`, 'signal');
-      socket.emit('join', { room, type: 'sharer' });
+      if (roomPin) {
+        socket.emit('join', { room, type: 'sharer', pin: roomPin });
+      }
+    });
+
+    socket.on('pin-error', () => {
+      pinInput.value = '';
+      pinInput.style.borderColor = '#d32f2f';
+      document.getElementById('pin-error').style.display = 'block';
+      showState('pin');
+      roomPin = null;
+      setTimeout(() => pinInput.focus(), 100);
     });
 
     socket.on('room-status', ({ hasDisplay }) => {
+      // PIN accepted — show share UI
+      if (document.getElementById('state-pin').classList.contains('active')) {
+        showShareUI();
+      }
       displayReady = hasDisplay;
       const warning = document.getElementById('no-display-warning');
       if (warning) warning.style.display = hasDisplay ? 'none' : 'block';

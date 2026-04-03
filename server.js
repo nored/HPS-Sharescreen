@@ -1,5 +1,6 @@
 const express = require('express');
 const http = require('http');
+const crypto = require('crypto');
 const { Server } = require('socket.io');
 const path = require('path');
 
@@ -21,11 +22,27 @@ const TURN_PASS = process.env.TURN_PASS || 'hotelparkshare2024';
 
 const ROOMS = (process.env.ROOMS || 'Kiel,Hamburg,Bremen').split(',').map(r => r.trim());
 
+const PIN_SECRET = process.env.PIN_SECRET || 'hps-sharescreen-2024';
+
+// Generate a 4-digit PIN that rotates daily per room
+function getRoomPin(room) {
+  const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+  const hash = crypto.createHash('sha256').update(`${PIN_SECRET}:${room}:${today}`).digest('hex');
+  return String(parseInt(hash.slice(0, 8), 16) % 10000).padStart(4, '0');
+}
+
 app.use(express.static(path.join(__dirname, 'public')));
 
 // API: list available rooms
 app.get('/api/rooms', (req, res) => {
   res.json(ROOMS);
+});
+
+// API: room PIN (for display page only — shown on TV)
+app.get('/api/pin/:room', (req, res) => {
+  const room = req.params.room;
+  if (!ROOMS.includes(room)) return res.status(404).json({ error: 'Room not found' });
+  res.json({ pin: getRoomPin(room) });
 });
 
 // API: ICE server configuration (STUN + TURN)
@@ -96,7 +113,16 @@ io.on('connection', (socket) => {
   let currentRoom = null;
   let role = null;
 
-  socket.on('join', ({ room, type }) => {
+  socket.on('join', ({ room, type, pin }) => {
+    // Sharers must provide correct PIN
+    if (type === 'sharer') {
+      const correctPin = getRoomPin(room);
+      if (pin !== correctPin) {
+        socket.emit('pin-error', { message: 'Falscher PIN' });
+        return;
+      }
+    }
+
     currentRoom = room;
     role = type;
     socket.join(room);
