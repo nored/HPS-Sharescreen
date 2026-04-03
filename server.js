@@ -102,12 +102,12 @@ app.get('/admin', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'admin.html'));
 });
 
-// Display page (browser-based display, still works)
+// Room URL redirects to share page — display is Pi-only
 app.get('/:room', (req, res) => {
   const room = req.params.room;
   if (room === 'share' || room === 'api' || room === 'admin') return res.status(404).send('Not found');
   if (!ROOMS.includes(room)) return res.status(404).send('Room not found');
-  res.sendFile(path.join(__dirname, 'public', 'display.html'));
+  res.redirect(`/${room}/share`);
 });
 
 // Share page (visitor's device)
