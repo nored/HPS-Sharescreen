@@ -26,14 +26,42 @@
     /* Idle screen: URL-centered layout */
     #idle-screen {
       display: flex;
-      align-items: center;
-      justify-content: center;
+      flex-direction: column;
       height: 100vh;
-      gap: 80px;
-      padding: 60px;
+      padding: 40px 60px;
     }
 
     #idle-screen.hidden { display: none; }
+
+    .top-bar {
+      display: flex;
+      align-items: center;
+      width: 100%;
+      margin-bottom: 20px;
+    }
+
+    .logo {
+      width: 80px;
+      height: auto;
+    }
+
+    .hotel-name {
+      flex: 1;
+      text-align: center;
+      font-size: 2.2rem;
+      font-weight: 300;
+      color: #fff;
+      letter-spacing: 3px;
+      margin-right: 80px; /* offset for logo width to keep text visually centered */
+    }
+
+    .idle-body {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex: 1;
+      gap: 80px;
+    }
 
     .main-content {
       display: flex;
@@ -41,10 +69,6 @@
       align-items: center;
       gap: 36px;
       flex: 1;
-    }
-
-    .logo {
-      width: 300px;
     }
 
     .room-name {
@@ -216,34 +240,39 @@
   </div>
 
   <div id="idle-screen">
-    <div class="main-content">
-      <img src="/logo.svg" alt="Hotel Park Soltau" class="logo">
-      <div class="room-name" id="room-name"></div>
-      <div class="share-url">
-        <div class="share-url-label">Auf dem Laptop &ouml;ffnen:</div>
-        <div class="share-url-text" id="share-url"></div>
-      </div>
-      <div class="pin-display">PIN: <span id="room-pin">----</span></div>
-      <div class="steps">
-        <div class="step">
-          <div class="step-number">1</div>
-          <div class="step-text">URL im<br>Browser &ouml;ffnen</div>
-        </div>
-        <div class="step">
-          <div class="step-number">2</div>
-          <div class="step-text">PIN<br>eingeben</div>
-        </div>
-        <div class="step">
-          <div class="step-number">3</div>
-          <div class="step-text">Bildschirm<br>freigeben</div>
-        </div>
-      </div>
+    <div class="top-bar">
+      <img src="/logo.svg" alt="HPS" class="logo">
+      <div class="hotel-name">Hotel Park Soltau</div>
     </div>
-    <div class="qr-side">
-      <div class="qr-container">
-        <canvas id="qr-canvas"></canvas>
+    <div class="idle-body">
+      <div class="main-content">
+        <div class="room-name" id="room-name"></div>
+        <div class="share-url">
+          <div class="share-url-label">Auf dem Laptop &ouml;ffnen:</div>
+          <div class="share-url-text" id="share-url"></div>
+        </div>
+        <div class="pin-display">PIN: <span id="room-pin">----</span></div>
+        <div class="steps">
+          <div class="step">
+            <div class="step-number">1</div>
+            <div class="step-text">URL im<br>Browser &ouml;ffnen</div>
+          </div>
+          <div class="step">
+            <div class="step-number">2</div>
+            <div class="step-text">PIN<br>eingeben</div>
+          </div>
+          <div class="step">
+            <div class="step-number">3</div>
+            <div class="step-text">Bildschirm<br>freigeben</div>
+          </div>
+        </div>
       </div>
-      <div class="qr-label">oder QR-Code scannen</div>
+      <div class="qr-side">
+        <div class="qr-container">
+          <canvas id="qr-canvas"></canvas>
+        </div>
+        <div class="qr-label">oder QR-Code scannen</div>
+      </div>
     </div>
   </div>
 
