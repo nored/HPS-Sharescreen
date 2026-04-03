@@ -488,11 +488,21 @@
     socket.on('room-status', ({ hasDisplay, hasSharer }) => {
       // PIN accepted — show share UI
       if (document.getElementById('state-pin').classList.contains('active')) {
-        showShareUI();
+        if (hasSharer) {
+          showState('busy');
+        } else {
+          showShareUI();
+        }
       }
-      // Room became free while waiting — show share UI so user can try
+      // Room became free while waiting — show share UI
       if (document.getElementById('state-busy').classList.contains('active') && !hasSharer) {
         showShareUI();
+      }
+      // Someone else started sharing while we're on share UI — show busy
+      const onShareUI = document.getElementById('state-ready').classList.contains('active')
+                     || document.getElementById('state-mobile').classList.contains('active');
+      if (onShareUI && hasSharer) {
+        showState('busy');
       }
       displayReady = hasDisplay;
       const warning = document.getElementById('no-display-warning');
