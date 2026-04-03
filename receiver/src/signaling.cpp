@@ -198,8 +198,12 @@ void Signaling::handle_event(const std::string& event, JsonNode* data) {
     }
     else if (event == "refresh-idle") {
         printf("Refresh idle image command received\n");
-        system("rm -f /tmp/sharescreen-idle.png");
-        // Will be re-fetched on next idle
+        std::string cmd = "curl -sf -o /tmp/sharescreen-idle.png " +
+                          server_url_ + "/" + room_ + "/idle.png";
+        system(cmd.c_str());
+        printf("Idle image re-fetched\n");
+        if (callbacks_.on_sharing_stopped)
+            callbacks_.on_sharing_stopped();
     }
     else if (event == "update") {
         printf("Update command received from admin\n");
