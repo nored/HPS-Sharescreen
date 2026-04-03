@@ -1,19 +1,19 @@
-FROM node:20-alpine
+FROM oven/bun:slim
 
 WORKDIR /app
 
 # Chromium + fonts for idle screen screenshots
-RUN apk add --no-cache chromium font-noto font-noto-emoji
+RUN apt-get update && apt-get install -y --no-install-recommends \
+  chromium fonts-noto fonts-noto-color-emoji \
+  && rm -rf /var/lib/apt/lists/*
 
-ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
-ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
-ENV PUPPETEER_SKIP_DOWNLOAD=true
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 
-COPY package.json package-lock.json* ./
-RUN npm ci --omit=dev
+COPY package.json bun.lock* ./
+RUN bun install --production
 
 COPY . .
 
 EXPOSE 3000
 
-CMD ["node", "server.js"]
+CMD ["bun", "server.js"]
