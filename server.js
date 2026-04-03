@@ -50,6 +50,11 @@ app.get('/api/rooms', (req, res) => {
   res.json(ROOMS);
 });
 
+// API: running commit hash
+app.get('/api/version', (req, res) => {
+  res.json({ commit: process.env.GIT_COMMIT || 'unknown' });
+});
+
 // API: room PIN (for display page only — shown on TV)
 app.get('/api/pin/:room', (req, res) => {
   const room = req.params.room;

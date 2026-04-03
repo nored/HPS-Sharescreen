@@ -47,6 +47,9 @@
     .btn-copy:hover { background: #7a8619; }
     .btn-close { background: #e0e0e0; color: #333; }
     .btn-close:hover { background: #d0d0d0; }
+    .update-banner { display: none; background: #ff9800; color: #fff; padding: 12px 20px; border-radius: 10px; margin-bottom: 16px; font-size: 0.9rem; align-items: center; gap: 10px; }
+    .update-banner.show { display: flex; }
+    .update-banner strong { font-weight: 600; }
     .add-room { display: flex; gap: 8px; margin-bottom: 20px; }
     .add-room input { flex: 1; padding: 10px 14px; border: 2px solid #ddd; border-radius: 8px; font-size: 0.95rem; outline: none; }
     .add-room input:focus { border-color: var(--primary); }
@@ -62,6 +65,9 @@
     <h1>ShareScreen Admin</h1>
   </div>
   <div class="container">
+    <div class="update-banner" id="update-banner">
+      <strong>Update verf&uuml;gbar!</strong> <span id="update-info"></span>
+    </div>
     <div class="add-room">
       <input type="text" id="new-room-input" placeholder="Neuer Raum (z.B. Sylt)" onkeydown="if(event.key==='Enter')addRoom()">
       <button class="btn-add" onclick="addRoom()">Raum hinzuf&uuml;gen</button>
@@ -313,6 +319,27 @@ WantedBy=multi-user.target`;
     function closeSetup() {
       document.getElementById('setup-modal').classList.remove('show');
     }
+
+    // Check if GitHub is ahead of running server
+    async function checkForUpdates() {
+      try {
+        const [versionRes, githubRes] = await Promise.all([
+          fetch('/api/version').then(r => r.json()),
+          fetch('https://api.github.com/repos/nored/HPS-Sharescreen/commits/main').then(r => r.json())
+        ]);
+        const running = versionRes.commit;
+        const latest = githubRes.sha?.substring(0, 7);
+        const message = githubRes.commit?.message?.split('\n')[0];
+        if (running === 'unknown' || !latest) return;
+        if (!githubRes.sha.startsWith(running)) {
+          document.getElementById('update-info').textContent =
+            `Server: ${running.substring(0,7)} — GitHub: ${latest} (${message})`;
+          document.getElementById('update-banner').classList.add('show');
+        }
+      } catch {}
+    }
+    checkForUpdates();
+    setInterval(checkForUpdates, 5 * 60 * 1000);
 
     function showToast(msg) {
       const t = document.getElementById('toast');
