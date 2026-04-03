@@ -6,7 +6,7 @@ services:
     ports:
       - "3000:3000"
     volumes:
-      - sharescreen-data:/app/data
+      - /mnt/data/hps-sharescreen:/app/data
     environment:
       - PORT=3000
       - BASE_URL=https://share.hotel-park-soltau.de
@@ -15,9 +15,6 @@ services:
       - TURN_PORT=3478
       - TURN_USER=sharescreen
       - TURN_PASS=hotelparkshare2024
-
-volumes:
-  sharescreen-data:
 
   coturn:
     image: coturn/coturn
