@@ -196,6 +196,14 @@ io.on('connection', (socket) => {
   socket.on('stop-sharing', () => {
     if (currentRoom) {
       socket.to(currentRoom).emit('sharing-stopped');
+      if (rooms[currentRoom]?.sharer === socket.id) {
+        rooms[currentRoom].sharer = null;
+      }
+      io.to(currentRoom).emit('room-status', {
+        hasDisplay: !!rooms[currentRoom]?.display,
+        hasSharer: !!rooms[currentRoom]?.sharer
+      });
+      broadcastAdminStatus();
     }
   });
 
