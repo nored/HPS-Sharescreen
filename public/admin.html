@@ -32,6 +32,18 @@
     .btn-clear:hover { background: #d0d0d0; }
     .btn-remove { background: #d32f2f; color: #fff; }
     .btn-remove:hover { background: #b71c1c; }
+    .btn-setup { background: #1565c0; color: #fff; }
+    .btn-setup:hover { background: #0d47a1; }
+    .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 100; align-items: center; justify-content: center; }
+    .modal-overlay.show { display: flex; }
+    .modal { background: #fff; border-radius: 12px; padding: 28px; max-width: 700px; width: 90%; max-height: 80vh; overflow-y: auto; }
+    .modal h2 { font-size: 1.2rem; margin-bottom: 16px; }
+    .modal pre { background: #1e1e1e; color: #d4d4d4; padding: 16px; border-radius: 8px; font-size: 0.8rem; overflow-x: auto; white-space: pre; line-height: 1.5; }
+    .modal-actions { display: flex; gap: 8px; margin-top: 16px; justify-content: flex-end; }
+    .btn-copy { background: var(--primary); color: #fff; }
+    .btn-copy:hover { background: #7a8619; }
+    .btn-close { background: #e0e0e0; color: #333; }
+    .btn-close:hover { background: #d0d0d0; }
     .add-room { display: flex; gap: 8px; margin-bottom: 20px; }
     .add-room input { flex: 1; padding: 10px 14px; border: 2px solid #ddd; border-radius: 8px; font-size: 0.95rem; outline: none; }
     .add-room input:focus { border-color: var(--primary); }
@@ -52,6 +64,16 @@
       <button class="btn-add" onclick="addRoom()">Raum hinzuf&uuml;gen</button>
     </div>
     <div class="room-grid" id="room-grid"></div>
+  </div>
+  <div class="modal-overlay" id="setup-modal" onclick="if(event.target===this)closeSetup()">
+    <div class="modal">
+      <h2 id="setup-title"></h2>
+      <pre id="setup-config"></pre>
+      <div class="modal-actions">
+        <button class="btn btn-copy" onclick="copySetup()">Kopieren</button>
+        <button class="btn btn-close" onclick="closeSetup()">Schlie&szlig;en</button>
+      </div>
+    </div>
   </div>
   <div class="toast" id="toast"></div>
 
@@ -87,6 +109,7 @@
             </div>
           </div>
           <div class="room-actions">
+            <button class="btn btn-setup" onclick="showSetup('${room}')">Setup</button>
             <button class="btn btn-reboot" onclick="rebootPi('${room}')" ${info.display ? '' : 'disabled'}>Reboot Pi</button>
             <button class="btn btn-clear" onclick="clearIdle('${room}')">Idle neu</button>
             <button class="btn btn-remove" onclick="removeRoom('${room}')">Entfernen</button>
@@ -120,6 +143,165 @@
       if (!confirm(`Raum "${room}" wirklich entfernen?`)) return;
       socket.emit('admin-remove-room', { room });
       showToast(`Raum "${room}" entfernt`);
+    }
+
+    function showSetup(room) {
+      const hostname = room.toLowerCase().replace(/[^a-z0-9]/g, '') + '-stream';
+      const config = `# === Inventory: hosts.yml ===
+all:
+  hosts:
+    ${hostname}:
+      ansible_host: ${hostname}.local
+      ansible_user: pi
+      ansible_password: raspberry
+      sharescreen_room: "${room}"
+      sharescreen_server: "https://share.hotel-park-soltau.de"
+
+# === Playbook: setup-pi.yml ===
+- name: ShareScreen Pi Setup — ${room}
+  hosts: ${hostname}
+  become: true
+  vars:
+    receiver_src: ./receiver
+  tasks:
+    - name: Install GStreamer and build dependencies
+      apt:
+        update_cache: true
+        pkg:
+          - build-essential
+          - cmake
+          - pkg-config
+          - libgstreamer1.0-dev
+          - libgstreamer-plugins-base1.0-dev
+          - libgstreamer-plugins-bad1.0-dev
+          - gstreamer1.0-plugins-base
+          - gstreamer1.0-plugins-good
+          - gstreamer1.0-plugins-bad
+          - gstreamer1.0-nice
+          - libsoup-3.0-dev
+          - libjson-glib-dev
+          - curl
+
+    - name: Configure gpu_mem=128
+      lineinfile:
+        path: /boot/firmware/config.txt
+        regexp: "^gpu_mem="
+        line: "gpu_mem=128"
+
+    - name: Add HDMI config
+      blockinfile:
+        path: /boot/firmware/config.txt
+        marker: "# {mark} ShareScreen"
+        block: |
+          hdmi_force_hotplug=1
+          hdmi_group=1
+          hdmi_mode=16
+
+    - name: Silent boot — console to tty3
+      replace:
+        path: /boot/firmware/cmdline.txt
+        regexp: "console=tty1"
+        replace: "console=tty3"
+
+    - name: Silent boot — add quiet params
+      replace:
+        path: /boot/firmware/cmdline.txt
+        regexp: "(rootwait)(?! quiet)"
+        replace: "\\\\1 quiet loglevel=0 logo.nologo vt.global_cursor_default=0 consoleblank=0"
+
+    - name: Kernel tuning
+      copy:
+        dest: /etc/sysctl.d/99-sharescreen.conf
+        content: |
+          vm.swappiness=10
+          net.core.rmem_max=2500000
+      notify: reload sysctl
+
+    - name: Disable getty on tty1
+      systemd:
+        name: getty@tty1
+        enabled: false
+
+    - name: Copy receiver source
+      synchronize:
+        src: "{{ receiver_src }}/"
+        dest: /home/pi/receiver/
+        delete: true
+
+    - name: Build receiver
+      shell: |
+        cd /home/pi/receiver
+        mkdir -p build && cd build
+        cmake .. -DCMAKE_BUILD_TYPE=Release
+        make -j$(nproc)
+      args:
+        creates: /home/pi/receiver/build/sharescreen-receiver
+
+    - name: Install receiver binary
+      copy:
+        src: /home/pi/receiver/build/sharescreen-receiver
+        dest: /usr/local/bin/sharescreen-receiver
+        remote_src: true
+        mode: "0755"
+
+    - name: Write room config
+      copy:
+        dest: /home/pi/.sharescreen-room
+        content: "{{ sharescreen_room }}"
+        owner: pi
+        group: pi
+
+    - name: Install systemd service
+      template:
+        src: sharescreen.service.j2
+        dest: /etc/systemd/system/sharescreen.service
+      notify: restart sharescreen
+
+  handlers:
+    - name: reload sysctl
+      command: sysctl --system
+
+    - name: restart sharescreen
+      systemd:
+        name: sharescreen
+        state: restarted
+        enabled: true
+        daemon_reload: true
+
+# === Template: sharescreen.service.j2 ===
+[Unit]
+Description=ShareScreen WebRTC Receiver
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+Environment=HOME=/home/pi
+Environment=SHARESCREEN_SERVER={{ sharescreen_server }}
+Environment=XDG_RUNTIME_DIR=/run/user/0
+ExecStartPre=/bin/sh -c 'echo performance > /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor 2>/dev/null || true'
+ExecStart=/usr/bin/stdbuf -oL /usr/local/bin/sharescreen-receiver {{ sharescreen_room }}
+Nice=-20
+Restart=always
+RestartSec=5
+TimeoutStopSec=5
+
+[Install]
+WantedBy=multi-user.target`;
+
+      document.getElementById('setup-title').textContent = `Ansible Setup — Raum ${room}`;
+      document.getElementById('setup-config').textContent = config;
+      document.getElementById('setup-modal').classList.add('show');
+    }
+
+    function copySetup() {
+      const text = document.getElementById('setup-config').textContent;
+      navigator.clipboard.writeText(text).then(() => showToast('Ansible-Config kopiert'));
+    }
+
+    function closeSetup() {
+      document.getElementById('setup-modal').classList.remove('show');
     }
 
     function showToast(msg) {
