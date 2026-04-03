@@ -28,6 +28,13 @@ async function renderIdleImage(room) {
   try {
     await page.goto(`${RENDER_URL}/${room}`, { waitUntil: 'networkidle0', timeout: 15000 });
 
+    // Wait for QR code canvas to render
+    await page.waitForSelector('#qr-canvas', { timeout: 5000 });
+    await page.waitForFunction(() => {
+      const canvas = document.getElementById('qr-canvas');
+      return canvas && canvas.width > 0;
+    }, { timeout: 5000 });
+
     // Fix URLs to show real public URL instead of localhost
     await page.evaluate((publicUrl, roomName) => {
       const shareUrl = `${publicUrl}/${roomName}/share`;
@@ -49,7 +56,7 @@ async function renderIdleImage(room) {
       document.querySelectorAll('script').forEach(s => s.remove());
     }, PUBLIC_URL, room);
 
-    await new Promise(r => setTimeout(r, 300));
+    await new Promise(r => setTimeout(r, 500));
     return await page.screenshot({ type: 'png' });
   } finally {
     await page.close();
