@@ -539,22 +539,20 @@
 
       stream.getTracks().forEach(track => pc.addTrack(track, stream));
 
-      // Downscale to 1080p for Pi hardware decoder
+      // Downscale to 1080p only if source exceeds it (Pi hardware decoder limit)
       for (const sender of pc.getSenders()) {
         if (sender.track && sender.track.kind === 'video') {
-          const params = sender.getParameters();
-          if (!params.encodings || params.encodings.length === 0) {
-            params.encodings = [{}];
-          }
-          const track = sender.track;
-          const settings = track.getSettings();
+          const settings = sender.track.getSettings();
           if (settings.width > 1920 || settings.height > 1080) {
+            const params = sender.getParameters();
+            if (!params.encodings || params.encodings.length === 0) {
+              params.encodings = [{}];
+            }
             const scale = Math.max(settings.width / 1920, settings.height / 1080);
             params.encodings[0].scaleResolutionDownBy = scale;
-            dbg(`Downscaling: ${settings.width}x${settings.height} by ${scale.toFixed(2)}x`, 'webrtc');
+            await sender.setParameters(params);
+            dbg(`Downscaling: ${settings.width}x${settings.height} → ~1080p (${scale.toFixed(2)}x)`, 'webrtc');
           }
-          params.encodings[0].maxBitrate = 4000000;
-          await sender.setParameters(params);
         }
       }
 
