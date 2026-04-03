@@ -38,8 +38,9 @@ async function renderIdleImage(room) {
     // Fix URLs to show real public URL instead of localhost
     await page.evaluate((publicUrl, roomName) => {
       const shareUrl = `${publicUrl}/${roomName}/share`;
-      document.getElementById('share-url').textContent = shareUrl;
-      // Re-render QR code with correct URL
+      const host = publicUrl.replace(/^https?:\/\//, '');
+      document.getElementById('share-url').textContent = `${host}/${roomName}`;
+      // Re-render QR code with correct URL (full URL for QR)
       if (typeof QRious !== 'undefined') {
         new QRious({
           element: document.getElementById('qr-canvas'),

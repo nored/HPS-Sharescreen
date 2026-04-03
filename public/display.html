@@ -47,8 +47,16 @@
       width: 300px;
     }
 
-    .room-name {
+    .headline {
       font-size: 2rem;
+      font-weight: 300;
+      color: #eee;
+      text-align: center;
+      max-width: 700px;
+    }
+
+    .room-name {
+      font-size: 1.6rem;
       color: var(--primary-light);
       letter-spacing: 3px;
       text-transform: uppercase;
@@ -63,14 +71,8 @@
       text-align: center;
     }
 
-    .share-url-label {
-      font-size: 1.5rem;
-      color: #ddd;
-      margin-bottom: 16px;
-    }
-
     .share-url-text {
-      font-size: 3.2rem;
+      font-size: 3.4rem;
       font-weight: 600;
       color: var(--primary-light);
       font-family: 'Courier New', monospace;
@@ -218,16 +220,11 @@
   <div id="idle-screen">
     <div class="main-content">
       <img src="/logo.svg" alt="Hotel Park Soltau" class="logo">
-      <div class="room-name" id="room-name"></div>
-      <div class="share-url">
-        <div class="share-url-label">Auf dem Laptop &ouml;ffnen:</div>
-        <div class="share-url-text" id="share-url"></div>
-      </div>
-      <div class="pin-display">PIN: <span id="room-pin">----</span></div>
+      <div class="headline">Teilen Sie Ihren Bildschirm auf diesem Display</div>
       <div class="steps">
         <div class="step">
           <div class="step-number">1</div>
-          <div class="step-text">URL im<br>Browser &ouml;ffnen</div>
+          <div class="step-text">Adresse im Laptop-<br>Browser &ouml;ffnen</div>
         </div>
         <div class="step">
           <div class="step-number">2</div>
@@ -238,6 +235,11 @@
           <div class="step-text">Bildschirm<br>freigeben</div>
         </div>
       </div>
+      <div class="share-url">
+        <div class="share-url-text" id="share-url"></div>
+      </div>
+      <div class="pin-display">PIN: <span id="room-pin">----</span></div>
+      <div class="room-name" id="room-name"></div>
     </div>
     <div class="qr-side">
       <div class="qr-container">
@@ -264,9 +266,10 @@
     const baseUrl = window.location.origin;
     const shareUrl = `${baseUrl}/${room}/share`;
 
-    // Set room name
+    // Set room name and display-friendly URL (no https://, no /share)
     document.getElementById('room-name').textContent = `Raum ${room}`;
-    document.getElementById('share-url').textContent = shareUrl;
+    const displayUrl = window.location.host + '/' + room;
+    document.getElementById('share-url').textContent = displayUrl;
 
     // Fetch and display room PIN
     fetch(`/api/pin/${room}`)
