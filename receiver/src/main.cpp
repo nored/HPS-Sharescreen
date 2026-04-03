@@ -50,13 +50,17 @@ int main(int argc, char* argv[]) {
 
     Pipeline pipeline(connector_id);
 
-    // Show idle screen if image exists
+    // Fetch idle image from server if not cached
+    if (!std::ifstream(idle_image).good()) {
+        std::string cmd = "curl -sf -o " + idle_image + " " +
+                          server + "/" + room + "/idle.png";
+        printf("Fetching idle image...\n");
+        system(cmd.c_str());
+    }
     if (std::ifstream(idle_image).good()) {
         pipeline.show_idle(idle_image);
     } else {
-        printf("No idle image at %s — generate with:\n", idle_image.c_str());
-        printf("  curl -o %s %s/%s/idle.png\n", idle_image.c_str(),
-               server.c_str(), room.c_str());
+        printf("No idle image available\n");
     }
 
     SignalingCallbacks callbacks;

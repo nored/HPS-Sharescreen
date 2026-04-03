@@ -46,6 +46,16 @@ app.get('/api/ice-config', (req, res) => {
   });
 });
 
+// Idle screen image for C++ receiver (pre-rendered by idle-image.ts)
+app.get('/:room/idle.png', (req, res) => {
+  const room = req.params.room;
+  if (!ROOMS.includes(room)) return res.status(404).send('Room not found');
+  const file = path.join(__dirname, 'public', 'idle', `${room}.png`);
+  res.sendFile(file, (err) => {
+    if (err) res.status(404).send('Idle image not generated yet. Run: bun idle-image.ts');
+  });
+});
+
 // Display page (browser-based display, still works)
 app.get('/:room', (req, res) => {
   const room = req.params.room;
