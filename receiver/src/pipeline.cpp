@@ -156,33 +156,41 @@ void Pipeline::on_pad_added(GstElement* webrtc, GstPad* pad, gpointer user_data)
 }
 
 void Pipeline::link_video_chain(GstPad* src_pad) {
-    // rtph264depay -> h264parse -> v4l2h264dec -> v4l2convert -> kmssink
+    // Minimal pipeline — DRM plane handles scaling + format
+    // depay -> queue -> parse -> v4l2h264dec -> kmssink
     auto* depay = gst_element_factory_make("rtph264depay", nullptr);
+    auto* queue = gst_element_factory_make("queue", nullptr);
     auto* parse = gst_element_factory_make("h264parse", nullptr);
     auto* decoder = gst_element_factory_make("v4l2h264dec", nullptr);
-    auto* convert = gst_element_factory_make("v4l2convert", nullptr);
     auto* sink = gst_element_factory_make("kmssink", nullptr);
 
-    if (!depay || !parse || !decoder || !convert || !sink) {
-        fprintf(stderr, "FATAL: Failed to create hardware pipeline elements.\n");
+    if (!depay || !queue || !parse || !decoder || !sink) {
+        fprintf(stderr, "FATAL: Failed to create pipeline elements.\n");
         return;
     }
 
+    // Minimal queue — decouple without buffering
+    g_object_set(queue,
+        "max-size-buffers", 1,
+        "max-size-time", (guint64)0,
+        "max-size-bytes", 0,
+        nullptr);
+
+    // No force-modesetting — use existing display mode, let DRM plane scale
     g_object_set(sink,
         "connector-id", connector_id_,
-        "force-modesetting", TRUE,
         "sync", FALSE,
         nullptr);
 
-    gst_bin_add_many(GST_BIN(pipe_), depay, parse, decoder, convert, sink, nullptr);
+    gst_bin_add_many(GST_BIN(pipe_), depay, queue, parse, decoder, sink, nullptr);
 
     gst_element_sync_state_with_parent(depay);
+    gst_element_sync_state_with_parent(queue);
     gst_element_sync_state_with_parent(parse);
     gst_element_sync_state_with_parent(decoder);
-    gst_element_sync_state_with_parent(convert);
     gst_element_sync_state_with_parent(sink);
 
-    gst_element_link_many(depay, parse, decoder, convert, sink, nullptr);
+    gst_element_link_many(depay, queue, parse, decoder, sink, nullptr);
 
     auto* sink_pad = gst_element_get_static_pad(depay, "sink");
     auto ret = gst_pad_link(src_pad, sink_pad);
