@@ -269,7 +269,21 @@ void Signaling::send_ice_candidate(int mline_index, const std::string& candidate
 
 void Signaling::on_ws_closed_cb(SoupWebsocketConnection* conn, gpointer user_data) {
     auto* self = static_cast<Signaling*>(user_data);
-    printf("WebSocket closed\n");
+    printf("WebSocket closed, reconnecting in 5s...\n");
     self->connected_ = false;
-    self->ws_ = nullptr;
+    if (self->ws_) {
+        g_object_unref(self->ws_);
+        self->ws_ = nullptr;
+    }
+
+    if (self->callbacks_.on_disconnected)
+        self->callbacks_.on_disconnected();
+
+    // Reconnect after delay
+    g_timeout_add_seconds(5, [](gpointer data) -> gboolean {
+        auto* sig = static_cast<Signaling*>(data);
+        printf("Reconnecting...\n");
+        sig->connect();
+        return G_SOURCE_REMOVE;
+    }, self);
 }

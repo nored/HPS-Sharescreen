@@ -10,6 +10,7 @@
 static GMainLoop* main_loop = nullptr;
 
 static void signal_handler(int sig) {
+    printf("\nSignal %d received, shutting down...\n", sig);
     if (main_loop)
         g_main_loop_quit(main_loop);
 }
@@ -73,10 +74,16 @@ int main(int argc, char* argv[]) {
     };
 
     callbacks.on_sharing_stopped = [&]() {
+        printf("Sharing stopped, returning to idle\n");
         pipeline.stop();
         if (std::ifstream(idle_image).good()) {
             pipeline.show_idle(idle_image);
         }
+    };
+
+    callbacks.on_disconnected = [&]() {
+        printf("Disconnected, stopping pipeline\n");
+        pipeline.stop();
     };
 
     Signaling signaling(server, room, callbacks);

@@ -11,6 +11,7 @@ struct SignalingCallbacks {
     std::function<void(const std::string& sdp)> on_offer;
     std::function<void(int mline, const std::string& candidate)> on_ice_candidate;
     std::function<void()> on_sharing_stopped;
+    std::function<void()> on_disconnected;
 };
 
 class Signaling {
