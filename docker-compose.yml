@@ -1,9 +1,6 @@
 services:
   sharescreen:
-    build:
-      context: .
-      args:
-        GIT_COMMIT: ${GIT_COMMIT:-unknown}
+    build: .
     container_name: hps-sharescreen
     restart: unless-stopped
     ports:

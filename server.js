@@ -51,8 +51,12 @@ app.get('/api/rooms', (req, res) => {
 });
 
 // API: running commit hash
+const GIT_COMMIT = (() => {
+  try { return fs.readFileSync(path.join(__dirname, '.git-commit'), 'utf8').trim(); }
+  catch { return 'unknown'; }
+})();
 app.get('/api/version', (req, res) => {
-  res.json({ commit: process.env.GIT_COMMIT || 'unknown' });
+  res.json({ commit: GIT_COMMIT });
 });
 
 // API: room PIN (for display page only — shown on TV)

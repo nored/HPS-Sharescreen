@@ -15,8 +15,8 @@ RUN npm ci --omit=dev
 
 COPY . .
 
-ARG GIT_COMMIT=unknown
-ENV GIT_COMMIT=$GIT_COMMIT
+RUN GIT_COMMIT=$(cat .git/refs/heads/main 2>/dev/null || cat .git/HEAD 2>/dev/null || echo unknown) \
+    && echo "$GIT_COMMIT" > /app/.git-commit
 
 EXPOSE 3000
 
