@@ -420,11 +420,11 @@
       if (pin.length !== 4) return;
       roomPin = pin;
 
-      // Connect socket and try to join — server validates PIN
+      // Connect socket and join as viewer — server validates PIN
       if (!socket.connected) {
         socket.connect();
       } else {
-        socket.emit('join', { room, type: 'sharer', pin: roomPin });
+        socket.emit('join', { room, type: 'viewer', pin: roomPin });
       }
     }
 
@@ -467,7 +467,8 @@
     socket.on('connect', () => {
       dbg(`Socket connected: ${socket.id}`, 'signal');
       if (roomPin) {
-        socket.emit('join', { room, type: 'sharer', pin: roomPin });
+        const isSharing = stream && stream.getTracks().some(t => t.readyState === 'live');
+        socket.emit('join', { room, type: isSharing ? 'sharer' : 'viewer', pin: roomPin });
       }
     });
 

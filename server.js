@@ -125,8 +125,8 @@ io.on('connection', (socket) => {
   let role = null;
 
   socket.on('join', ({ room, type, pin }) => {
-    // Sharers must provide correct PIN
-    if (type === 'sharer') {
+    // Sharers and viewers must provide correct PIN
+    if (type === 'sharer' || type === 'viewer') {
       const correctPin = getRoomPin(room);
       if (pin !== correctPin) {
         socket.emit('pin-error', { message: 'Falscher PIN' });
@@ -151,6 +151,15 @@ io.on('connection', (socket) => {
     socket.join(room);
 
     if (!rooms[room]) rooms[room] = { display: null, sharer: null };
+
+    // Viewers just join the room for status updates — no slot tracking
+    if (type === 'viewer') {
+      io.to(room).emit('room-status', {
+        hasDisplay: !!rooms[room].display,
+        hasSharer: !!rooms[room].sharer
+      });
+      return;
+    }
 
     // Kick stale socket if a new one joins with the same role
     const oldId = rooms[room][type];
