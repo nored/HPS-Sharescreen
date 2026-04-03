@@ -29,6 +29,7 @@ private:
                        GBytes* message);
     void send_event(const std::string& event, JsonNode* data);
     void handle_event(const std::string& event, JsonNode* data);
+    void schedule_reconnect();
 
     static void on_ws_connected(GObject* source, GAsyncResult* result, gpointer user_data);
     static void on_ws_message_cb(SoupWebsocketConnection* conn, gint type,

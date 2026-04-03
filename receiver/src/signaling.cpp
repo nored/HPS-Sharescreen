@@ -33,9 +33,10 @@ void Signaling::connect() {
     auto* body = soup_session_send_and_read(session_, msg, nullptr, &error);
 
     if (error) {
-        fprintf(stderr, "Polling failed: %s\n", error->message);
+        fprintf(stderr, "Polling failed: %s — retrying in 5s\n", error->message);
         g_error_free(error);
         g_object_unref(msg);
+        schedule_reconnect();
         return;
     }
 
@@ -46,9 +47,10 @@ void Signaling::connect() {
     // Find the JSON part
     const char* json_start = strchr(data, '{');
     if (!json_start) {
-        fprintf(stderr, "No JSON in polling response\n");
+        fprintf(stderr, "No JSON in polling response — retrying in 5s\n");
         g_bytes_unref(body);
         g_object_unref(msg);
+        schedule_reconnect();
         return;
     }
 
@@ -288,11 +290,14 @@ void Signaling::on_ws_closed_cb(SoupWebsocketConnection* conn, gpointer user_dat
     if (self->callbacks_.on_disconnected)
         self->callbacks_.on_disconnected();
 
-    // Reconnect after delay
+    self->schedule_reconnect();
+}
+
+void Signaling::schedule_reconnect() {
     g_timeout_add_seconds(5, [](gpointer data) -> gboolean {
         auto* sig = static_cast<Signaling*>(data);
         printf("Reconnecting...\n");
         sig->connect();
         return G_SOURCE_REMOVE;
-    }, self);
+    }, this);
 }
