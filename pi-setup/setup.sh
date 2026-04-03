@@ -124,10 +124,11 @@ Environment=HOME=${PI_HOME}
 Environment=SHARESCREEN_SERVER=${SERVER}
 Environment=XDG_RUNTIME_DIR=/run/user/0
 ExecStartPre=/bin/sh -c 'echo performance > /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor 2>/dev/null || true'
-ExecStart=/usr/local/bin/sharescreen-receiver ${ROOM}
+ExecStart=/usr/bin/stdbuf -oL /usr/local/bin/sharescreen-receiver ${ROOM}
 Nice=-20
 Restart=always
 RestartSec=5
+TimeoutStopSec=5
 
 [Install]
 WantedBy=multi-user.target
