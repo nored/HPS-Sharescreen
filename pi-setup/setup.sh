@@ -1,36 +1,53 @@
 #!/bin/bash
 # =============================================================================
-# ShareScreen Raspberry Pi Setup
+# ShareScreen Raspberry Pi Setup — C++ WebRTC Receiver
 # =============================================================================
 #
-# For Raspberry Pi OS Lite. No browser needed — uses mpv for video
-# and fbi for the QR code display on the framebuffer directly.
+# For Raspberry Pi OS Lite (no desktop). Builds the C++ GStreamer WebRTC
+# receiver with hardware H.264 decode (v4l2h264dec) and KMS display output.
 #
 # USAGE:
-#   curl -sL https://raw.githubusercontent.com/nored/HPS-Sharescreen/main/pi-setup/setup.sh -o /tmp/setup.sh && sudo bash /tmp/setup.sh Kiel
+#   sudo bash setup.sh <ROOM_NAME> [SERVER_URL]
+#
+# EXAMPLE:
+#   sudo bash setup.sh Kiel https://share.hotel-park-soltau.de
 #
 # =============================================================================
 
 set -e
 
 ROOM="${1:?Usage: sudo bash setup.sh <ROOM_NAME> (e.g. Kiel, Hamburg)}"
+SERVER="${2:-https://share.hotel-park-soltau.de}"
 PI_USER="${SUDO_USER:-pi}"
 PI_HOME="/home/${PI_USER}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+RECEIVER_DIR="${SCRIPT_DIR}/../receiver"
 
 echo ""
 echo "========================================="
 echo "  ShareScreen Setup — Raum ${ROOM}"
+echo "  C++ WebRTC Receiver (hardware decode)"
 echo "========================================="
 echo ""
 
 # --- Install dependencies ---
-echo "[1/5] Installing mpv, qrencode, fbi..."
+echo "[1/6] Installing GStreamer and build dependencies..."
 apt-get update -qq
-apt-get install -y mpv qrencode fbi curl
+apt-get install -y -qq \
+  build-essential cmake pkg-config \
+  libgstreamer1.0-dev \
+  libgstreamer-plugins-base1.0-dev \
+  libgstreamer-plugins-bad1.0-dev \
+  gstreamer1.0-plugins-base \
+  gstreamer1.0-plugins-good \
+  gstreamer1.0-plugins-bad \
+  gstreamer1.0-nice \
+  libsoup-3.0-dev \
+  libjson-glib-dev \
+  curl
 
-# --- Boot config ---
-echo "[2/5] Configuring boot..."
+# --- Boot config — GPU memory + HDMI ---
+echo "[2/6] Configuring boot (gpu_mem=128, HDMI force hotplug)..."
 CONFIG="/boot/firmware/config.txt"
 [ ! -f "$CONFIG" ] && CONFIG="/boot/config.txt"
 
@@ -40,62 +57,62 @@ else
   echo "gpu_mem=128" >> "$CONFIG"
 fi
 
-if ! grep -q "^arm_freq=" "$CONFIG"; then
+if ! grep -q "^# ShareScreen" "$CONFIG"; then
   cat >> "$CONFIG" <<BOOT
 
 # ShareScreen
-arm_freq=1050
-over_voltage=2
 hdmi_force_hotplug=1
 hdmi_group=1
 hdmi_mode=16
 BOOT
 fi
 
-# --- Disable unnecessary services ---
-echo "[3/5] Disabling unnecessary services..."
-systemctl disable bluetooth hciuart triggerhappy 2>/dev/null || true
-
+# --- Kernel tuning (non-destructive) ---
+echo "[3/6] Tuning kernel parameters..."
 cat > /etc/sysctl.d/99-sharescreen.conf <<SYSCTL
 vm.swappiness=10
 net.core.rmem_max=2500000
 SYSCTL
 
-# --- Install display script ---
-echo "[4/5] Installing display script..."
-
-# Download display.sh if running from curl (no local copy)
-if [ -f "${SCRIPT_DIR}/display.sh" ]; then
-  cp "${SCRIPT_DIR}/display.sh" "${PI_HOME}/display.sh"
+# --- Build C++ receiver ---
+echo "[4/6] Building C++ receiver..."
+if [ -d "${RECEIVER_DIR}" ]; then
+  cd "${RECEIVER_DIR}"
 else
-  curl -sL https://raw.githubusercontent.com/nored/HPS-Sharescreen/main/pi-setup/display.sh -o "${PI_HOME}/display.sh"
+  echo "ERROR: receiver/ directory not found at ${RECEIVER_DIR}"
+  echo "Clone the repo first: git clone <repo> && cd HPS-ShareScreen && sudo bash pi-setup/setup.sh ${ROOM}"
+  exit 1
 fi
-chmod +x "${PI_HOME}/display.sh"
 
+mkdir -p build
+cd build
+cmake .. -DCMAKE_BUILD_TYPE=Release
+make -j$(nproc)
+cp sharescreen-receiver /usr/local/bin/
+echo "Installed: /usr/local/bin/sharescreen-receiver"
+
+# --- Room config ---
+echo "[5/6] Configuring room..."
 echo "${ROOM}" > "${PI_HOME}/.sharescreen-room"
-chown "${PI_USER}:${PI_USER}" "${PI_HOME}/display.sh" "${PI_HOME}/.sharescreen-room"
-
-# Pre-generate QR code
-sudo -u "${PI_USER}" qrencode -o /tmp/sharescreen-qr.png -s 10 -m 2 \
-  --foreground=2a2a29 "https://share.hotel-park-soltau.de/${ROOM}/share"
+chown "${PI_USER}:${PI_USER}" "${PI_HOME}/.sharescreen-room"
 
 # --- systemd service ---
-echo "[5/5] Creating systemd service..."
+echo "[6/6] Creating systemd service..."
 cat > /etc/systemd/system/sharescreen.service <<SERVICE
 [Unit]
-Description=ShareScreen Display
-After=network.target
+Description=ShareScreen WebRTC Receiver
+After=network-online.target
+Wants=network-online.target
 
 [Service]
 Type=simple
-User=${PI_USER}
+User=root
 Environment=HOME=${PI_HOME}
-Restart=on-failure
+Environment=SHARESCREEN_SERVER=${SERVER}
+Environment=XDG_RUNTIME_DIR=/run/user/0
+ExecStart=/usr/local/bin/sharescreen-receiver ${ROOM}
+Restart=always
 RestartSec=5
-StartLimitIntervalSec=60
-StartLimitBurst=5
-
-ExecStart=${PI_HOME}/display.sh
 
 [Install]
 WantedBy=multi-user.target
@@ -104,22 +121,20 @@ SERVICE
 systemctl daemon-reload
 systemctl enable sharescreen.service
 
-# --- Set hostname ---
-HOSTNAME="sharescreen-$(echo ${ROOM} | tr '[:upper:]' '[:lower:]')"
-hostnamectl set-hostname "${HOSTNAME}" 2>/dev/null || echo "${HOSTNAME}" > /etc/hostname
-
 echo ""
 echo "========================================="
 echo "  Setup complete!"
-echo "  Hostname: ${HOSTNAME}"
 echo "  Room:     ${ROOM}"
+echo "  Server:   ${SERVER}"
 echo "========================================="
 echo ""
-echo "  Packages: mpv, qrencode, fbi (no browser!)"
+echo "  Hardware pipeline:"
+echo "    webrtcbin → rtph264depay → h264parse → v4l2h264dec → v4l2convert → kmssink"
 echo ""
-echo "  sudo systemctl status sharescreen"
-echo "  sudo systemctl restart sharescreen"
-echo "  sudo journalctl -u sharescreen -f"
+echo "  Commands:"
+echo "    sudo systemctl status sharescreen"
+echo "    sudo systemctl restart sharescreen"
+echo "    sudo journalctl -u sharescreen -f"
 echo ""
 echo "  Rebooting in 5 seconds... (Ctrl+C to cancel)"
 sleep 5

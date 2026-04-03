@@ -395,6 +395,10 @@
 
     socket.on('answer', async ({ answer }) => {
       if (!pc) return;
+      if (pc.signalingState === 'stable') {
+        dbg('Ignoring duplicate answer (already stable)', 'warn');
+        return;
+      }
       try {
         await pc.setRemoteDescription(answer);
         for (const c of pendingCandidates) {
@@ -534,6 +538,25 @@
       dbg(`Tracks: ${stream.getTracks().map(t => t.kind + ':' + t.readyState).join(', ')}`, 'webrtc');
 
       stream.getTracks().forEach(track => pc.addTrack(track, stream));
+
+      // Downscale to 1080p for Pi hardware decoder
+      for (const sender of pc.getSenders()) {
+        if (sender.track && sender.track.kind === 'video') {
+          const params = sender.getParameters();
+          if (!params.encodings || params.encodings.length === 0) {
+            params.encodings = [{}];
+          }
+          const track = sender.track;
+          const settings = track.getSettings();
+          if (settings.width > 1920 || settings.height > 1080) {
+            const scale = Math.max(settings.width / 1920, settings.height / 1080);
+            params.encodings[0].scaleResolutionDownBy = scale;
+            dbg(`Downscaling: ${settings.width}x${settings.height} by ${scale.toFixed(2)}x`, 'webrtc');
+          }
+          params.encodings[0].maxBitrate = 4000000;
+          await sender.setParameters(params);
+        }
+      }
 
       pc.onicecandidate = (event) => {
         if (event.candidate && event.candidate.candidate) {

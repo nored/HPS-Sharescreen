@@ -43,4 +43,6 @@ target_compile_options(sharescreen-receiver PRIVATE
   ${GLIB_CFLAGS_OTHER}
 )
 
+target_compile_definitions(sharescreen-receiver PRIVATE GST_USE_UNSTABLE_API)
+
 install(TARGETS sharescreen-receiver DESTINATION bin)

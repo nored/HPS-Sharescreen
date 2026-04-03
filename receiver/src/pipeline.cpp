@@ -151,40 +151,9 @@ void Pipeline::link_video_chain(GstPad* src_pad) {
     auto* sink = gst_element_factory_make("kmssink", nullptr);
 
     if (!depay || !parse || !decoder || !convert || !sink) {
-        fprintf(stderr, "Failed to create pipeline elements\n");
-
-        // Fallback: try decodebin + videoconvert
-        auto* decodebin = gst_element_factory_make("decodebin", nullptr);
-        auto* vconv = gst_element_factory_make("videoconvert", nullptr);
-        auto* vsink = gst_element_factory_make("kmssink", nullptr);
-
-        g_object_set(vsink,
-            "connector-id", connector_id_,
-            "force-modesetting", TRUE,
-            "sync", FALSE,
-            nullptr);
-
-        gst_bin_add_many(GST_BIN(pipe_), decodebin, vconv, vsink, nullptr);
-
-        // decodebin pad-added -> videoconvert -> kmssink
-        g_signal_connect(decodebin, "pad-added",
-            G_CALLBACK(+[](GstElement* src, GstPad* pad, gpointer data) {
-                auto* vconv = static_cast<GstElement*>(data);
-                auto* sink_pad = gst_element_get_static_pad(vconv, "sink");
-                gst_pad_link(pad, sink_pad);
-                gst_object_unref(sink_pad);
-            }), vconv);
-
-        gst_element_link(vconv, vsink);
-        gst_element_sync_state_with_parent(decodebin);
-        gst_element_sync_state_with_parent(vconv);
-        gst_element_sync_state_with_parent(vsink);
-
-        auto* sink_pad = gst_element_get_static_pad(decodebin, "sink");
-        gst_pad_link(src_pad, sink_pad);
-        gst_object_unref(sink_pad);
-
-        printf("Fallback pipeline connected\n");
+        fprintf(stderr, "FATAL: Failed to create hardware pipeline elements.\n");
+        fprintf(stderr, "Required: rtph264depay, h264parse, v4l2h264dec, v4l2convert, kmssink\n");
+        fprintf(stderr, "Install: gstreamer1.0-plugins-good gstreamer1.0-plugins-bad\n");
         return;
     }
 

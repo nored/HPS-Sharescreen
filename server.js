@@ -74,6 +74,13 @@ io.on('connection', (socket) => {
     socket.join(room);
 
     if (!rooms[room]) rooms[room] = { display: null, sharer: null };
+
+    // Kick stale socket if a new one joins with the same role
+    const oldId = rooms[room][type];
+    if (oldId && oldId !== socket.id) {
+      const oldSocket = io.sockets.sockets.get(oldId);
+      if (oldSocket) oldSocket.leave(room);
+    }
     rooms[room][type] = socket.id;
 
     if (type === 'sharer' && rooms[room].display) {
