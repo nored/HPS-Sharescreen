@@ -11,8 +11,4 @@ services:
       - PORT=3000
       - BASE_URL=https://share.hotel-park-soltau.de
       - ROOMS=Kiel,Hamburg,Bremen,Heide,Lübeck
-      - TURN_HOST=share.hotel-park-soltau.de
-      - TURN_PORT=3478
-      - TURN_USER=sharescreen
-      - TURN_PASS=hotelparkshare2024
 

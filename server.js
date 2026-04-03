@@ -16,10 +16,6 @@ const io = new Server(server, {
 
 const PORT = process.env.PORT || 3000;
 const BASE_URL = process.env.BASE_URL || 'https://share.hotel-park-soltau.de';
-const TURN_HOST = process.env.TURN_HOST || 'share.hotel-park-soltau.de';
-const TURN_PORT = process.env.TURN_PORT || '3478';
-const TURN_USER = process.env.TURN_USER || 'sharescreen';
-const TURN_PASS = process.env.TURN_PASS || 'hotelparkshare2024';
 
 const ROOMS_FILE = path.join(__dirname, 'data', 'rooms.json');
 const ROOMS_DEFAULT = (process.env.ROOMS || 'Kiel,Hamburg,Bremen').split(',').map(r => r.trim());
@@ -61,20 +57,11 @@ app.get('/api/pin/:room', (req, res) => {
   res.json({ pin: getRoomPin(room) });
 });
 
-// API: ICE server configuration (STUN + TURN)
+// API: ICE server configuration (STUN only)
 app.get('/api/ice-config', (req, res) => {
   res.json({
     iceServers: [
-      { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] },
-      { urls: `stun:${TURN_HOST}:${TURN_PORT}` },
-      {
-        urls: [
-          `turn:${TURN_HOST}:${TURN_PORT}?transport=udp`,
-          `turn:${TURN_HOST}:${TURN_PORT}?transport=tcp`
-        ],
-        username: TURN_USER,
-        credential: TURN_PASS
-      }
+      { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }
     ]
   });
 });
