@@ -320,19 +320,20 @@ WantedBy=multi-user.target`;
       document.getElementById('setup-modal').classList.remove('show');
     }
 
-    // Check if a newer version is available on GitHub
+    // Check if GitHub has commits newer than the server build
     async function checkForUpdates() {
       try {
-        const [localRes, remoteRes] = await Promise.all([
+        const [localRes, githubRes] = await Promise.all([
           fetch('/api/version').then(r => r.json()),
-          fetch('https://raw.githubusercontent.com/nored/HPS-Sharescreen/main/VERSION').then(r => r.text())
+          fetch('https://api.github.com/repos/nored/HPS-Sharescreen/commits/main').then(r => r.json())
         ]);
-        const running = localRes.version;
-        const latest = remoteRes.trim();
-        if (running === 'unknown' || !latest) return;
-        if (running !== latest) {
+        const buildDate = localRes.buildDate;
+        const latestCommitDate = githubRes.commit?.committer?.date;
+        const latestMsg = githubRes.commit?.message?.split('\n')[0];
+        if (!buildDate || !latestCommitDate) return;
+        if (new Date(latestCommitDate) > new Date(buildDate)) {
           document.getElementById('update-info').textContent =
-            `Server: v${running} — Verf\u00fcgbar: v${latest}`;
+            `Neuer Commit: "${latestMsg}" — Server gebaut: ${new Date(buildDate).toLocaleString('de')}`;
           document.getElementById('update-banner').classList.add('show');
         }
       } catch {}

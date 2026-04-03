@@ -50,13 +50,13 @@ app.get('/api/rooms', (req, res) => {
   res.json(ROOMS);
 });
 
-// API: running version
-const VERSION = (() => {
-  try { return fs.readFileSync(path.join(__dirname, 'VERSION'), 'utf8').trim(); }
-  catch { return 'unknown'; }
+// API: build date (baked in during docker build)
+const BUILD_DATE = (() => {
+  try { return fs.readFileSync(path.join(__dirname, '.build-date'), 'utf8').trim(); }
+  catch { return null; }
 })();
 app.get('/api/version', (req, res) => {
-  res.json({ version: VERSION });
+  res.json({ buildDate: BUILD_DATE });
 });
 
 // API: room PIN (for display page only — shown on TV)

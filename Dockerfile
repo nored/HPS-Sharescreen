@@ -14,6 +14,7 @@ COPY package.json package-lock.json* ./
 RUN npm ci --omit=dev
 
 COPY . .
+RUN date -u +%Y-%m-%dT%H:%M:%SZ > /app/.build-date
 
 EXPOSE 3000
 
