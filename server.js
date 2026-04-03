@@ -211,6 +211,9 @@ io.on('connection', (socket) => {
     if (currentRoom && rooms[currentRoom]) {
       if (rooms[currentRoom][role] === socket.id) {
         rooms[currentRoom][role] = null;
+        if (role === 'sharer') {
+          io.to(currentRoom).emit('sharing-stopped');
+        }
       }
       io.to(currentRoom).emit('room-status', {
         hasDisplay: !!rooms[currentRoom].display,
