@@ -1,6 +1,6 @@
 # HPS-ShareScreen
 
-Drahtlose Bildschirmfreigabe für Konferenzräume im Hotel Park Soltau. Gäste scannen einen QR-Code, geben einen Raum-PIN ein und teilen ihren Bildschirm direkt auf das Raumdisplay — ohne App, ohne Kabel.
+Drahtlose Bildschirmfreigabe für Konferenzräume im Hotel Park Soltau. Gäste öffnen eine URL, geben einen Raum-PIN ein und teilen ihren Bildschirm direkt auf das Raumdisplay — ohne App, ohne Kabel.
 
 ## Funktionsweise
 
