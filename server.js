@@ -1,6 +1,7 @@
 const express = require('express');
 const http = require('http');
 const crypto = require('crypto');
+const fs = require('fs');
 const { Server } = require('socket.io');
 const path = require('path');
 
@@ -20,7 +21,22 @@ const TURN_PORT = process.env.TURN_PORT || '3478';
 const TURN_USER = process.env.TURN_USER || 'sharescreen';
 const TURN_PASS = process.env.TURN_PASS || 'hotelparkshare2024';
 
-const ROOMS = (process.env.ROOMS || 'Kiel,Hamburg,Bremen').split(',').map(r => r.trim());
+const ROOMS_FILE = path.join(__dirname, 'data', 'rooms.json');
+const ROOMS_DEFAULT = (process.env.ROOMS || 'Kiel,Hamburg,Bremen').split(',').map(r => r.trim());
+
+// Load rooms from file, seed from env if file doesn't exist
+function loadRooms() {
+  try {
+    return JSON.parse(fs.readFileSync(ROOMS_FILE, 'utf8'));
+  } catch {
+    return [...ROOMS_DEFAULT];
+  }
+}
+function saveRooms(rooms) {
+  fs.mkdirSync(path.dirname(ROOMS_FILE), { recursive: true });
+  fs.writeFileSync(ROOMS_FILE, JSON.stringify(rooms, null, 2));
+}
+let ROOMS = loadRooms();
 
 const PIN_SECRET = process.env.PIN_SECRET || 'hps-sharescreen-2024';
 
@@ -64,7 +80,6 @@ app.get('/api/ice-config', (req, res) => {
 });
 
 // Idle screen image for C++ receiver — rendered on first request, then cached
-const fs = require('fs');
 const { renderIdleImage } = require('./idle-image');
 
 app.get('/:room/idle.png', async (req, res) => {
@@ -241,6 +256,30 @@ io.on('connection', (socket) => {
       io.to(rooms[room].display).emit('refresh-idle');
     }
     console.log(`Admin: idle image cleared for ${room}`);
+  });
+
+  socket.on('admin-add-room', ({ room }) => {
+    if (role !== 'admin') return;
+    const name = room?.trim();
+    if (!name || ROOMS.includes(name)) return;
+    ROOMS.push(name);
+    saveRooms(ROOMS);
+    console.log(`Admin: added room ${name}`);
+    broadcastAdminStatus();
+  });
+
+  socket.on('admin-remove-room', ({ room }) => {
+    if (role !== 'admin') return;
+    const idx = ROOMS.indexOf(room);
+    if (idx === -1) return;
+    ROOMS.splice(idx, 1);
+    saveRooms(ROOMS);
+    delete rooms[room];
+    // Remove cached idle image
+    const cacheFile = path.join(__dirname, 'public', 'idle', `${room}.png`);
+    try { fs.unlinkSync(cacheFile); } catch {}
+    console.log(`Admin: removed room ${room}`);
+    broadcastAdminStatus();
   });
 
   socket.on('disconnect', () => {
