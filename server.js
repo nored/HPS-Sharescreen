@@ -132,6 +132,18 @@ io.on('connection', (socket) => {
         socket.emit('pin-error', { message: 'Falscher PIN' });
         return;
       }
+      // Reject if someone else is already sharing
+      if (!rooms[room]) rooms[room] = { display: null, sharer: null };
+      if (rooms[room].sharer && rooms[room].sharer !== socket.id) {
+        const existingSocket = io.sockets.sockets.get(rooms[room].sharer);
+        if (existingSocket) {
+          socket.join(room);
+          currentRoom = room;
+          role = 'waiting';
+          socket.emit('sharer-busy');
+          return;
+        }
+      }
     }
 
     currentRoom = room;

@@ -359,6 +359,20 @@
         <button class="btn btn-stop" onclick="stopImageSharing()">Anzeige beenden</button>
       </div>
 
+      <!-- State: Room busy (another sharer active) -->
+      <div class="state" id="state-busy">
+        <div class="icon" style="background:rgba(255,152,0,0.15)">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#f57c00" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"></circle>
+            <line x1="12" y1="8" x2="12" y2="12"></line>
+            <line x1="12" y1="16" x2="12.01" y2="16"></line>
+          </svg>
+        </div>
+        <h1>Bildschirm belegt</h1>
+        <p class="hint">Es teilt bereits jemand den Bildschirm in diesem Raum. Sobald die Freigabe beendet wird, k&ouml;nnen Sie starten.</p>
+        <div class="status-text" style="color:#f57c00">Warte auf Freigabe...</div>
+      </div>
+
       <!-- State: Error -->
       <div class="state" id="state-error">
         <div class="icon icon-error">
@@ -466,10 +480,18 @@
       setTimeout(() => pinInput.focus(), 100);
     });
 
-    socket.on('room-status', ({ hasDisplay }) => {
+    socket.on('sharer-busy', () => {
+      showState('busy');
+    });
+
+    socket.on('room-status', ({ hasDisplay, hasSharer }) => {
       // PIN accepted — show share UI
       if (document.getElementById('state-pin').classList.contains('active')) {
         showShareUI();
+      }
+      // Room became free while waiting — re-join as sharer
+      if (document.getElementById('state-busy').classList.contains('active') && !hasSharer) {
+        socket.emit('join', { room, type: 'sharer', pin: roomPin });
       }
       displayReady = hasDisplay;
       const warning = document.getElementById('no-display-warning');
