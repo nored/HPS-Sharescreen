@@ -190,6 +190,15 @@ void Signaling::handle_event(const std::string& event, JsonNode* data) {
         if (callbacks_.on_sharing_stopped)
             callbacks_.on_sharing_stopped();
     }
+    else if (event == "reboot") {
+        printf("Reboot command received from admin\n");
+        system("sudo reboot");
+    }
+    else if (event == "refresh-idle") {
+        printf("Refresh idle image command received\n");
+        system("rm -f /tmp/sharescreen-idle.png");
+        // Will be re-fetched on next idle
+    }
     else if (event == "ready") {
         printf("Ready signal received\n");
     }

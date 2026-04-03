@@ -91,10 +91,21 @@ app.get('/:room/idle.png', async (req, res) => {
   }
 });
 
+// Admin page (basic auth)
+const ADMIN_PASS = process.env.ADMIN_PASS || 'admin';
+app.get('/admin', (req, res) => {
+  const auth = req.headers.authorization;
+  if (!auth || auth !== 'Basic ' + Buffer.from('admin:' + ADMIN_PASS).toString('base64')) {
+    res.set('WWW-Authenticate', 'Basic realm="ShareScreen Admin"');
+    return res.status(401).send('Unauthorized');
+  }
+  res.sendFile(path.join(__dirname, 'public', 'admin.html'));
+});
+
 // Display page (browser-based display, still works)
 app.get('/:room', (req, res) => {
   const room = req.params.room;
-  if (room === 'share' || room === 'api') return res.status(404).send('Not found');
+  if (room === 'share' || room === 'api' || room === 'admin') return res.status(404).send('Not found');
   if (!ROOMS.includes(room)) return res.status(404).send('Room not found');
   res.sendFile(path.join(__dirname, 'public', 'display.html'));
 });
@@ -150,6 +161,7 @@ io.on('connection', (socket) => {
       hasDisplay: !!rooms[room].display,
       hasSharer: !!rooms[room].sharer
     });
+    broadcastAdminStatus();
   });
 
   // WebRTC signaling
@@ -175,6 +187,26 @@ io.on('connection', (socket) => {
     }
   });
 
+  // Admin commands
+  socket.on('admin-reboot', ({ room }) => {
+    if (role !== 'admin') return;
+    if (rooms[room]?.display) {
+      io.to(rooms[room].display).emit('reboot');
+      console.log(`Admin: reboot sent to ${room}`);
+    }
+  });
+
+  socket.on('admin-clear-idle', ({ room }) => {
+    if (role !== 'admin') return;
+    const cacheFile = path.join(__dirname, 'public', 'idle', `${room}.png`);
+    try { fs.unlinkSync(cacheFile); } catch {}
+    // Tell Pi to re-fetch idle image
+    if (rooms[room]?.display) {
+      io.to(rooms[room].display).emit('refresh-idle');
+    }
+    console.log(`Admin: idle image cleared for ${room}`);
+  });
+
   socket.on('disconnect', () => {
     if (currentRoom && rooms[currentRoom]) {
       if (rooms[currentRoom][role] === socket.id) {
@@ -185,8 +217,22 @@ io.on('connection', (socket) => {
         hasSharer: !!rooms[currentRoom].sharer
       });
     }
+    broadcastAdminStatus();
   });
 });
+
+// Broadcast room status to all admin sockets
+function broadcastAdminStatus() {
+  const status = {};
+  for (const room of ROOMS) {
+    status[room] = {
+      display: !!rooms[room]?.display,
+      sharer: !!rooms[room]?.sharer,
+      pin: getRoomPin(room),
+    };
+  }
+  io.to('__admin').emit('admin-status', status);
+}
 
 server.listen(PORT, () => {
   console.log(`ShareScreen server running on port ${PORT}`);

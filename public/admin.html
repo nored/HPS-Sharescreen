@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ShareScreen Admin</title>
+  <script src="/socket.io/socket.io.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    :root { --primary: #95a321; --dark: #2a2a29; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f5f3; color: var(--dark); min-height: 100vh; }
+    .header { background: var(--dark); padding: 20px; display: flex; align-items: center; justify-content: center; gap: 16px; }
+    .header img { height: 40px; }
+    .header h1 { color: #fff; font-size: 1.2rem; font-weight: 400; }
+    .container { max-width: 900px; margin: 0 auto; padding: 30px 20px; }
+    .room-grid { display: grid; gap: 16px; }
+    .room-card { background: #fff; border-radius: 12px; padding: 20px 24px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); display: flex; align-items: center; justify-content: space-between; }
+    .room-info { display: flex; flex-direction: column; gap: 8px; }
+    .room-name { font-size: 1.3rem; font-weight: 600; }
+    .room-pin { font-family: 'Courier New', monospace; color: var(--primary); font-weight: 600; }
+    .room-status { display: flex; gap: 16px; font-size: 0.85rem; }
+    .status-item { display: flex; align-items: center; gap: 6px; }
+    .dot { width: 10px; height: 10px; border-radius: 50%; }
+    .dot.on { background: #4CAF50; }
+    .dot.off { background: #ccc; }
+    .room-actions { display: flex; gap: 8px; }
+    .btn { padding: 8px 16px; border: none; border-radius: 8px; font-size: 0.85rem; cursor: pointer; font-weight: 500; }
+    .btn-reboot { background: #ff9800; color: #fff; }
+    .btn-reboot:hover { background: #f57c00; }
+    .btn-reboot:disabled { background: #ccc; cursor: not-allowed; }
+    .btn-clear { background: #e0e0e0; color: #333; }
+    .btn-clear:hover { background: #d0d0d0; }
+    .toast { position: fixed; bottom: 20px; right: 20px; background: var(--dark); color: #fff; padding: 12px 20px; border-radius: 8px; opacity: 0; transition: opacity 0.3s; font-size: 0.9rem; }
+    .toast.show { opacity: 1; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <img src="/logo.svg" alt="Hotel Park Soltau">
+    <h1>ShareScreen Admin</h1>
+  </div>
+  <div class="container">
+    <div class="room-grid" id="room-grid"></div>
+  </div>
+  <div class="toast" id="toast"></div>
+
+  <script>
+    const socket = io();
+    let roomData = {};
+
+    socket.on('connect', () => {
+      socket.emit('join', { room: '__admin', type: 'admin' });
+    });
+
+    socket.on('admin-status', (data) => {
+      roomData = data;
+      render();
+    });
+
+    socket.on('admin-toast', ({ message }) => {
+      showToast(message);
+    });
+
+    function render() {
+      const grid = document.getElementById('room-grid');
+      grid.innerHTML = '';
+      for (const [room, info] of Object.entries(roomData)) {
+        const card = document.createElement('div');
+        card.className = 'room-card';
+        card.innerHTML = `
+          <div class="room-info">
+            <div class="room-name">${room} <span class="room-pin">PIN: ${info.pin}</span></div>
+            <div class="room-status">
+              <div class="status-item"><div class="dot ${info.display ? 'on' : 'off'}"></div>Display</div>
+              <div class="status-item"><div class="dot ${info.sharer ? 'on' : 'off'}"></div>Sharer</div>
+            </div>
+          </div>
+          <div class="room-actions">
+            <button class="btn btn-reboot" onclick="rebootPi('${room}')" ${info.display ? '' : 'disabled'}>Reboot Pi</button>
+            <button class="btn btn-clear" onclick="clearIdle('${room}')">Idle neu</button>
+          </div>
+        `;
+        grid.appendChild(card);
+      }
+    }
+
+    function rebootPi(room) {
+      if (!confirm(`Pi in Raum ${room} wirklich neustarten?`)) return;
+      socket.emit('admin-reboot', { room });
+      showToast(`Reboot für ${room} gesendet...`);
+    }
+
+    function clearIdle(room) {
+      socket.emit('admin-clear-idle', { room });
+      showToast(`Idle-Bild für ${room} wird neu generiert`);
+    }
+
+    function showToast(msg) {
+      const t = document.getElementById('toast');
+      t.textContent = msg;
+      t.classList.add('show');
+      setTimeout(() => t.classList.remove('show'), 3000);
+    }
+  </script>
+</body>
+</html>
