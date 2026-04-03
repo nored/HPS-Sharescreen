@@ -93,6 +93,21 @@ app.get('/:room/idle.png', async (req, res) => {
   }
 });
 
+// Receiver source tarball for Pi updates
+const { execSync } = require('child_process');
+app.get('/api/receiver.tar.gz', (req, res) => {
+  try {
+    const tarball = execSync('tar czf - -C receiver src CMakeLists.txt', {
+      cwd: __dirname,
+      maxBuffer: 10 * 1024 * 1024
+    });
+    res.set('Content-Type', 'application/gzip');
+    res.send(tarball);
+  } catch (err) {
+    res.status(500).send('Failed to create tarball');
+  }
+});
+
 // Admin page (basic auth)
 const ADMIN_PASS = process.env.ADMIN_PASS || 'admin';
 app.get('/admin', (req, res) => {
@@ -267,6 +282,14 @@ io.on('connection', (socket) => {
     try { fs.unlinkSync(cacheFile); } catch {}
     console.log(`Admin: removed room ${room}`);
     broadcastAdminStatus();
+  });
+
+  socket.on('admin-update-pi', ({ room }) => {
+    if (role !== 'admin') return;
+    if (rooms[room]?.display) {
+      io.to(rooms[room].display).emit('update');
+      console.log(`Admin: update sent to ${room}`);
+    }
   });
 
   socket.on('disconnect', () => {

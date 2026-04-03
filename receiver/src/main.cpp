@@ -67,6 +67,9 @@ int main(int argc, char* argv[]) {
 
     callbacks.on_connected = [&]() {
         printf("Connected to signaling server\n");
+        if (std::ifstream(idle_image).good()) {
+            pipeline.show_idle(idle_image);
+        }
     };
 
     callbacks.on_offer = [&](const std::string& sdp) {

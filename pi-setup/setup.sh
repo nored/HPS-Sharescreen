@@ -102,7 +102,10 @@ cd build
 cmake .. -DCMAKE_BUILD_TYPE=Release
 make -j$(nproc)
 cp sharescreen-receiver /usr/local/bin/
+cp "${SCRIPT_DIR}/sharescreen-update.sh" /usr/local/bin/
+chmod +x /usr/local/bin/sharescreen-update.sh
 echo "Installed: /usr/local/bin/sharescreen-receiver"
+echo "Installed: /usr/local/bin/sharescreen-update.sh"
 
 # --- Room config ---
 echo "[5/6] Configuring room..."

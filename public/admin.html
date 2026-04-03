@@ -34,6 +34,9 @@
     .btn-remove:hover { background: #b71c1c; }
     .btn-setup { background: #1565c0; color: #fff; }
     .btn-setup:hover { background: #0d47a1; }
+    .btn-update { background: #7b1fa2; color: #fff; }
+    .btn-update:hover { background: #6a1b9a; }
+    .btn-update:disabled { background: #ccc; cursor: not-allowed; }
     .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 100; align-items: center; justify-content: center; }
     .modal-overlay.show { display: flex; }
     .modal { background: #fff; border-radius: 12px; padding: 28px; max-width: 700px; width: 90%; max-height: 80vh; overflow-y: auto; }
@@ -110,6 +113,7 @@
           </div>
           <div class="room-actions">
             <button class="btn btn-setup" onclick="showSetup('${room}')">Setup</button>
+            <button class="btn btn-update" onclick="updatePi('${room}')" ${info.display ? '' : 'disabled'}>Update Pi</button>
             <button class="btn btn-reboot" onclick="rebootPi('${room}')" ${info.display ? '' : 'disabled'}>Reboot Pi</button>
             <button class="btn btn-clear" onclick="clearIdle('${room}')">Idle neu</button>
             <button class="btn btn-remove" onclick="removeRoom('${room}')">Entfernen</button>
@@ -123,6 +127,12 @@
       if (!confirm(`Pi in Raum ${room} wirklich neustarten?`)) return;
       socket.emit('admin-reboot', { room });
       showToast(`Reboot für ${room} gesendet...`);
+    }
+
+    function updatePi(room) {
+      if (!confirm(`Receiver in Raum ${room} aktualisieren? Der Pi baut neu und startet dann neu.`)) return;
+      socket.emit('admin-update-pi', { room });
+      showToast(`Update für ${room} gesendet — Build dauert ca. 1-2 Minuten`);
     }
 
     function clearIdle(room) {

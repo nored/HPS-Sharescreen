@@ -201,6 +201,10 @@ void Signaling::handle_event(const std::string& event, JsonNode* data) {
         system("rm -f /tmp/sharescreen-idle.png");
         // Will be re-fetched on next idle
     }
+    else if (event == "update") {
+        printf("Update command received from admin\n");
+        system("/usr/local/bin/sharescreen-update.sh");
+    }
     else if (event == "ready") {
         printf("Ready signal received\n");
     }
