@@ -226,6 +226,18 @@
       color: #aaa;
     }
 
+    .mobile-screen-share {
+      display: none;
+      width: 100%;
+      flex-direction: column;
+      align-items: center;
+      gap: 20px;
+    }
+
+    .mobile-screen-share.visible {
+      display: flex;
+    }
+
     .image-preview {
       width: 100%;
       border-radius: 8px;
@@ -274,14 +286,13 @@
           </svg>
         </div>
         <h1>Bildschirm teilen</h1>
-        <p class="hint">Die Bildschirmfreigabe funktioniert am besten vom Laptop. &Ouml;ffnen Sie diesen Link auf Ihrem Laptop:</p>
-        <div class="url-box" id="share-url-box"></div>
-        <button class="btn" onclick="copyLink()">Link kopieren</button>
-        <span class="copied-toast" id="copied-toast">Link kopiert!</span>
 
-        <div class="divider">oder</div>
+        <div id="mobile-screen-share" class="mobile-screen-share">
+          <button class="btn" onclick="startSharing()">Bildschirm freigeben</button>
+          <div class="divider">oder</div>
+        </div>
 
-        <p class="hint">Teilen Sie ein Foto oder Ihre Kamera direkt vom Handy:</p>
+        <p class="hint">Teilen Sie ein Foto oder Ihre Kamera, oder &ouml;ffnen Sie den Link auf Ihrem Laptop:</p>
         <button class="btn btn-camera" onclick="startCamera()">Kamera freigeben</button>
 
         <div class="upload-area" onclick="document.getElementById('file-input').click()">
@@ -294,6 +305,11 @@
           <div class="hint">Bild hochladen</div>
           <div class="upload-hint">Tippen um ein Bild auszuw&auml;hlen</div>
         </div>
+
+        <div class="divider">Laptop</div>
+        <div class="url-box" id="share-url-box"></div>
+        <button class="btn btn-secondary" onclick="copyLink()">Link kopieren</button>
+        <span class="copied-toast" id="copied-toast">Link kopiert!</span>
       </div>
 
       <!-- State: Sharing active (screen or camera) -->
@@ -350,7 +366,13 @@
     document.getElementById('share-url-box').textContent = shareUrl;
 
     const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+    const canScreenShare = !!navigator.mediaDevices?.getDisplayMedia;
     showState(isMobile ? 'mobile' : 'ready');
+
+    // Show screen share button on mobile if supported
+    if (isMobile && canScreenShare) {
+      document.getElementById('mobile-screen-share')?.classList.add('visible');
+    }
 
     const socket = io();
     if (window.dbgWatchSocket) dbgWatchSocket(socket);
