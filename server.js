@@ -46,14 +46,32 @@ app.get('/api/ice-config', (req, res) => {
   });
 });
 
-// Idle screen image for C++ receiver (pre-rendered by idle-image.ts)
-app.get('/:room/idle.png', (req, res) => {
+// Idle screen image for C++ receiver — rendered on first request, then cached
+const fs = require('fs');
+const { renderIdleImage } = require('./idle-image');
+
+app.get('/:room/idle.png', async (req, res) => {
   const room = req.params.room;
   if (!ROOMS.includes(room)) return res.status(404).send('Room not found');
-  const file = path.join(__dirname, 'public', 'idle', `${room}.png`);
-  res.sendFile(file, (err) => {
-    if (err) res.status(404).send('Idle image not generated yet. Run: bun idle-image.ts');
-  });
+
+  const cacheDir = path.join(__dirname, 'public', 'idle');
+  const cacheFile = path.join(cacheDir, `${room}.png`);
+
+  // Serve cached file
+  if (fs.existsSync(cacheFile)) {
+    return res.sendFile(cacheFile);
+  }
+
+  // Generate on demand
+  try {
+    fs.mkdirSync(cacheDir, { recursive: true });
+    const png = await renderIdleImage(room);
+    fs.writeFileSync(cacheFile, png);
+    res.sendFile(cacheFile);
+  } catch (err) {
+    console.error(`Failed to generate idle image for ${room}:`, err.message);
+    res.status(503).send('Idle image generation failed');
+  }
 });
 
 // Display page (browser-based display, still works)
