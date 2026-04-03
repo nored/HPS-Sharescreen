@@ -75,18 +75,16 @@ void Pipeline::handle_offer(const std::string& sdp) {
     g_signal_connect(webrtc_, "pad-added",
                      G_CALLBACK(on_pad_added), this);
 
-    // Drop late packets instead of buffering them
+    // Minimize jitter buffer latency
     g_signal_connect(webrtc_, "deep-element-added",
         G_CALLBACK(+[](GstBin* bin, GstBin* sub_bin, GstElement* element, gpointer) {
             auto* name = gst_element_get_name(element);
             if (g_str_has_prefix(name, "rtpjitterbuffer")) {
                 g_object_set(element,
-                    "latency", 0,
-                    "drop-on-latency", TRUE,
-                    "mode", 0,  // RTP timestamps only, no clock slaving
+                    "latency", 30,
                     "faststart-min-packets", 1,
                     nullptr);
-                printf("Jitter buffer: latency=0, drop-on-latency, mode=none\n");
+                printf("Jitter buffer: latency=30ms, faststart=1\n");
             }
             g_free(name);
         }), nullptr);
@@ -158,13 +156,14 @@ void Pipeline::on_pad_added(GstElement* webrtc, GstPad* pad, gpointer user_data)
 }
 
 void Pipeline::link_video_chain(GstPad* src_pad) {
-    // rtph264depay -> h264parse -> v4l2h264dec -> kmssink
+    // rtph264depay -> h264parse -> v4l2h264dec -> v4l2convert -> kmssink
     auto* depay = gst_element_factory_make("rtph264depay", nullptr);
     auto* parse = gst_element_factory_make("h264parse", nullptr);
     auto* decoder = gst_element_factory_make("v4l2h264dec", nullptr);
+    auto* convert = gst_element_factory_make("v4l2convert", nullptr);
     auto* sink = gst_element_factory_make("kmssink", nullptr);
 
-    if (!depay || !parse || !decoder || !sink) {
+    if (!depay || !parse || !decoder || !convert || !sink) {
         fprintf(stderr, "FATAL: Failed to create hardware pipeline elements.\n");
         return;
     }
@@ -173,17 +172,17 @@ void Pipeline::link_video_chain(GstPad* src_pad) {
         "connector-id", connector_id_,
         "force-modesetting", TRUE,
         "sync", FALSE,
-        "can-scale", TRUE,
         nullptr);
 
-    gst_bin_add_many(GST_BIN(pipe_), depay, parse, decoder, sink, nullptr);
+    gst_bin_add_many(GST_BIN(pipe_), depay, parse, decoder, convert, sink, nullptr);
 
     gst_element_sync_state_with_parent(depay);
     gst_element_sync_state_with_parent(parse);
     gst_element_sync_state_with_parent(decoder);
+    gst_element_sync_state_with_parent(convert);
     gst_element_sync_state_with_parent(sink);
 
-    gst_element_link_many(depay, parse, decoder, sink, nullptr);
+    gst_element_link_many(depay, parse, decoder, convert, sink, nullptr);
 
     auto* sink_pad = gst_element_get_static_pad(depay, "sink");
     auto ret = gst_pad_link(src_pad, sink_pad);
