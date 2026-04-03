@@ -7,6 +7,7 @@ RUN apk add --no-cache chromium font-noto font-noto-emoji
 
 ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
+ENV PUPPETEER_SKIP_DOWNLOAD=true
 
 COPY package.json package-lock.json* ./
 RUN npm ci --omit=dev
