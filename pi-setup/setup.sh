@@ -47,7 +47,7 @@ apt-get install -y -qq \
   curl
 
 # --- Boot config — GPU memory + HDMI ---
-echo "[2/6] Configuring boot (gpu_mem=128, HDMI force hotplug)..."
+echo "[2/6] Configuring boot (gpu_mem=128, silent boot)..."
 CONFIG="/boot/firmware/config.txt"
 [ ! -f "$CONFIG" ] && CONFIG="/boot/config.txt"
 
@@ -66,6 +66,21 @@ hdmi_group=1
 hdmi_mode=16
 BOOT
 fi
+
+# Silent boot: redirect console to tty3, suppress all output on screen
+CMDLINE="/boot/firmware/cmdline.txt"
+[ ! -f "$CMDLINE" ] && CMDLINE="/boot/cmdline.txt"
+sed -i 's|console=tty1|console=tty3|' "$CMDLINE"
+if ! grep -q "quiet" "$CMDLINE"; then
+  sed -i 's|rootwait|rootwait quiet loglevel=0 logo.nologo vt.global_cursor_default=0 consoleblank=0|' "$CMDLINE"
+fi
+sed -i 's|fsck.repair=yes|fsck.repair=no|' "$CMDLINE"
+
+# Disable fsck on boot
+tune2fs -c 0 -i 0 "$(findmnt -n -o SOURCE /)" 2>/dev/null || true
+
+# Disable login prompt on screen
+systemctl disable getty@tty1 2>/dev/null || true
 
 # --- Kernel tuning (non-destructive) ---
 echo "[3/6] Tuning kernel parameters..."
