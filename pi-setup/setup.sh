@@ -74,10 +74,8 @@ sed -i 's|console=tty1|console=tty3|' "$CMDLINE"
 if ! grep -q "quiet" "$CMDLINE"; then
   sed -i 's|rootwait|rootwait quiet loglevel=0 logo.nologo vt.global_cursor_default=0 consoleblank=0|' "$CMDLINE"
 fi
-sed -i 's|fsck.repair=yes|fsck.repair=no|' "$CMDLINE"
-
-# Disable fsck on boot
-tune2fs -c 0 -i 0 "$(findmnt -n -o SOURCE /)" 2>/dev/null || true
+# Keep fsck enabled (fsck.repair=yes) — power loss can corrupt the SD card
+# fsck output goes to tty3 with the rest of the console, so it stays silent on tty1
 
 # Disable login prompt on screen
 systemctl disable getty@tty1 2>/dev/null || true
@@ -146,7 +144,7 @@ echo "  Server:   ${SERVER}"
 echo "========================================="
 echo ""
 echo "  Hardware pipeline:"
-echo "    webrtcbin → rtph264depay → h264parse → v4l2h264dec → v4l2convert → kmssink"
+echo "    webrtcbin → rtph264depay → h264parse → v4l2h264dec → kmssink"
 echo ""
 echo "  Commands:"
 echo "    sudo systemctl status sharescreen"
