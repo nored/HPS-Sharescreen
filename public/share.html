@@ -489,9 +489,9 @@
       if (document.getElementById('state-pin').classList.contains('active')) {
         showShareUI();
       }
-      // Room became free while waiting — re-join as sharer
+      // Room became free while waiting — show share UI so user can try
       if (document.getElementById('state-busy').classList.contains('active') && !hasSharer) {
-        socket.emit('join', { room, type: 'sharer', pin: roomPin });
+        showShareUI();
       }
       displayReady = hasDisplay;
       const warning = document.getElementById('no-display-warning');
@@ -537,6 +537,7 @@
 
     // --- Desktop: Screen sharing ---
     async function startSharing() {
+      socket.emit('join', { room, type: 'sharer', pin: roomPin });
       try {
         // Use basic constraints — cursor/audio support varies by browser
         stream = await navigator.mediaDevices.getDisplayMedia({
@@ -562,6 +563,7 @@
 
     // --- Mobile: Camera sharing ---
     async function startCamera() {
+      socket.emit('join', { room, type: 'sharer', pin: roomPin });
       try {
         stream = await navigator.mediaDevices.getUserMedia({
           video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } },
