@@ -365,13 +365,18 @@
     document.getElementById('room-badge').textContent = `Raum ${room}`;
     document.getElementById('share-url-box').textContent = shareUrl;
 
-    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+    const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
     const canScreenShare = !!navigator.mediaDevices?.getDisplayMedia;
-    showState(isMobile ? 'mobile' : 'ready');
 
-    // Show screen share button on mobile if supported
-    if (isMobile && canScreenShare) {
-      document.getElementById('mobile-screen-share')?.classList.add('visible');
+    if (isTouchDevice) {
+      // Phone, tablet, iPad — show mobile UI with all options
+      showState('mobile');
+      if (canScreenShare) {
+        document.getElementById('mobile-screen-share')?.classList.add('visible');
+      }
+    } else {
+      // Desktop — just the screen share button
+      showState('ready');
     }
 
     const socket = io();
@@ -516,7 +521,7 @@
     function stopImageSharing() {
       socket.emit('stop-sharing');
       document.getElementById('file-input').value = '';
-      showState(isMobile ? 'mobile' : 'ready');
+      showState(isTouchDevice ? 'mobile' : 'ready');
     }
 
     // --- Copy link ---
@@ -644,7 +649,7 @@
         pc = null;
       }
       socket.emit('stop-sharing');
-      showState(isMobile ? 'mobile' : 'ready');
+      showState(isTouchDevice ? 'mobile' : 'ready');
     }
 
     function showState(state) {
@@ -658,7 +663,7 @@
     }
 
     function resetState() {
-      showState(isMobile ? 'mobile' : 'ready');
+      showState(isTouchDevice ? 'mobile' : 'ready');
     }
   </script>
 </body>
