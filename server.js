@@ -50,13 +50,13 @@ app.get('/api/rooms', (req, res) => {
   res.json(ROOMS);
 });
 
-// API: running commit hash
-const GIT_COMMIT = (() => {
-  try { return fs.readFileSync(path.join(__dirname, '.git-commit'), 'utf8').trim(); }
+// API: running version
+const VERSION = (() => {
+  try { return fs.readFileSync(path.join(__dirname, 'VERSION'), 'utf8').trim(); }
   catch { return 'unknown'; }
 })();
 app.get('/api/version', (req, res) => {
-  res.json({ commit: GIT_COMMIT });
+  res.json({ version: VERSION });
 });
 
 // API: room PIN (for display page only — shown on TV)

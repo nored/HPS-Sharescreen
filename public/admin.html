@@ -320,20 +320,19 @@ WantedBy=multi-user.target`;
       document.getElementById('setup-modal').classList.remove('show');
     }
 
-    // Check if GitHub is ahead of running server
+    // Check if a newer version is available on GitHub
     async function checkForUpdates() {
       try {
-        const [versionRes, githubRes] = await Promise.all([
+        const [localRes, remoteRes] = await Promise.all([
           fetch('/api/version').then(r => r.json()),
-          fetch('https://api.github.com/repos/nored/HPS-Sharescreen/commits/main').then(r => r.json())
+          fetch('https://raw.githubusercontent.com/nored/HPS-Sharescreen/main/VERSION').then(r => r.text())
         ]);
-        const running = versionRes.commit;
-        const latest = githubRes.sha?.substring(0, 7);
-        const message = githubRes.commit?.message?.split('\n')[0];
+        const running = localRes.version;
+        const latest = remoteRes.trim();
         if (running === 'unknown' || !latest) return;
-        if (!githubRes.sha.startsWith(running)) {
+        if (running !== latest) {
           document.getElementById('update-info').textContent =
-            `Server: ${running.substring(0,7)} — GitHub: ${latest} (${message})`;
+            `Server: v${running} — Verf\u00fcgbar: v${latest}`;
           document.getElementById('update-banner').classList.add('show');
         }
       } catch {}
