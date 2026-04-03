@@ -26,7 +26,7 @@ async function renderIdleImage(room) {
   await page.setViewport({ width: 1920, height: 1080, deviceScaleFactor: 1 });
 
   try {
-    await page.goto(`${RENDER_URL}/${room}`, { waitUntil: 'networkidle0', timeout: 15000 });
+    await page.goto(`${RENDER_URL}/${room}/display`, { waitUntil: 'networkidle0', timeout: 15000 });
 
     // Wait for QR code canvas to render
     await page.waitForSelector('#qr-canvas', { timeout: 5000 });

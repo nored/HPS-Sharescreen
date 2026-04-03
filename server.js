@@ -102,6 +102,13 @@ app.get('/admin', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'admin.html'));
 });
 
+// Display page for idle image rendering (Puppeteer only)
+app.get('/:room/display', (req, res) => {
+  const room = req.params.room;
+  if (!ROOMS.includes(room)) return res.status(404).send('Room not found');
+  res.sendFile(path.join(__dirname, 'public', 'display.html'));
+});
+
 // Room URL redirects to share page — display is Pi-only
 app.get('/:room', (req, res) => {
   const room = req.params.room;
