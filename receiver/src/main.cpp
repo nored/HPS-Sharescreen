@@ -6,6 +6,10 @@
 #include <csignal>
 #include <string>
 #include <fstream>
+#include <sstream>
+#include <map>
+#include <vector>
+#include <unistd.h>
 
 static GMainLoop* main_loop = nullptr;
 
@@ -15,24 +19,147 @@ static void signal_handler(int sig) {
         g_main_loop_quit(main_loop);
 }
 
-static std::string read_room_file() {
-    std::ifstream f(std::string(getenv("HOME") ? getenv("HOME") : "/home/pi") +
-                    "/.sharescreen-room");
-    std::string room;
-    if (f >> room) return room;
-    return "Kiel";
+// Parse simple key=value config file
+static std::map<std::string, std::string> read_config(const std::string& path) {
+    std::map<std::string, std::string> config;
+    std::ifstream f(path);
+    std::string line;
+    while (std::getline(f, line)) {
+        // Skip comments and empty lines
+        if (line.empty() || line[0] == '#') continue;
+        auto eq = line.find('=');
+        if (eq == std::string::npos) continue;
+        auto key = line.substr(0, eq);
+        auto val = line.substr(eq + 1);
+        // Trim whitespace
+        while (!key.empty() && key.back() == ' ') key.pop_back();
+        while (!val.empty() && val.front() == ' ') val.erase(val.begin());
+        config[key] = val;
+    }
+    return config;
+}
+
+// Try multiple config file locations (boot partition first)
+static std::map<std::string, std::string> find_config() {
+    const char* paths[] = {
+        "/boot/firmware/sharescreen.conf",
+        "/boot/sharescreen.conf",
+        "/etc/sharescreen.conf",
+        nullptr
+    };
+    for (int i = 0; paths[i]; i++) {
+        auto config = read_config(paths[i]);
+        if (!config.empty()) {
+            printf("Config loaded from %s\n", paths[i]);
+            return config;
+        }
+    }
+    return {};
+}
+
+// Try mDNS discovery via avahi-browse (available on Pi)
+static std::string discover_server() {
+    printf("Searching for ShareScreen server via mDNS...\n");
+    FILE* pipe = popen("avahi-browse -rpt _sharescreen._tcp 2>/dev/null | head -20", "r");
+    if (!pipe) return "";
+
+    std::string result;
+    char buf[512];
+    while (fgets(buf, sizeof(buf), pipe)) {
+        result += buf;
+    }
+    pclose(pipe);
+
+    // Parse avahi-browse output: look for address and port
+    // Format: =;eth0;IPv4;ShareScreen;_sharescreen._tcp;local;hostname;address;port;txt
+    std::string address, port;
+    std::istringstream stream(result);
+    std::string line;
+    while (std::getline(stream, line)) {
+        if (line.empty() || line[0] != '=') continue;
+        // Split by semicolons
+        std::vector<std::string> fields;
+        std::istringstream ls(line);
+        std::string field;
+        while (std::getline(ls, field, ';')) fields.push_back(field);
+        if (fields.size() >= 9) {
+            address = fields[7];
+            port = fields[8];
+            // Check TXT record for url
+            if (fields.size() >= 10) {
+                auto txt = fields[9];
+                auto url_pos = txt.find("\"url=");
+                if (url_pos != std::string::npos) {
+                    auto start = url_pos + 5;
+                    auto end = txt.find('"', start);
+                    if (end != std::string::npos) {
+                        auto url = txt.substr(start, end - start);
+                        printf("Found server via mDNS: %s\n", url.c_str());
+                        return url;
+                    }
+                }
+            }
+            if (!address.empty() && !port.empty()) {
+                auto url = "http://" + address + ":" + port;
+                printf("Found server via mDNS: %s\n", url.c_str());
+                return url;
+            }
+        }
+    }
+    return "";
 }
 
 int main(int argc, char* argv[]) {
     gst_init(&argc, &argv);
 
-    std::string room = (argc > 1) ? argv[1] : read_room_file();
-    std::string server = getenv("SHARESCREEN_SERVER")
-        ? getenv("SHARESCREEN_SERVER")
-        : "https://share.hotel-park-soltau.de";
+    // Config priority: CLI args > env vars > config file > mDNS > defaults
+    auto config = find_config();
+
+    std::string room;
+    std::string server;
+
+    // Room: CLI arg > env > config file
+    if (argc > 1) {
+        room = argv[1];
+    } else if (getenv("SHARESCREEN_ROOM")) {
+        room = getenv("SHARESCREEN_ROOM");
+    } else if (config.count("room")) {
+        room = config["room"];
+    }
+
+    // Server: env > config file > mDNS
+    if (getenv("SHARESCREEN_SERVER")) {
+        server = getenv("SHARESCREEN_SERVER");
+    } else if (config.count("server")) {
+        server = config["server"];
+    } else {
+        server = discover_server();
+    }
+
+    // If still no server, retry mDNS periodically
+    if (server.empty()) {
+        printf("No server configured and mDNS discovery failed.\n");
+        printf("Place a config file at /boot/firmware/sharescreen.conf with:\n");
+        printf("  server=https://your-server.example.com\n");
+        printf("  room=YourRoom\n");
+        printf("Retrying mDNS every 10 seconds...\n");
+
+        while (server.empty()) {
+            sleep(10);
+            server = discover_server();
+        }
+    }
+
+    if (room.empty()) {
+        printf("No room configured, using hostname\n");
+        char hostname[64];
+        gethostname(hostname, sizeof(hostname));
+        room = hostname;
+    }
+
     int connector_id = getenv("KMS_CONNECTOR_ID")
         ? atoi(getenv("KMS_CONNECTOR_ID"))
-        : 33;
+        : config.count("connector_id") ? atoi(config["connector_id"].c_str()) : 33;
     std::string idle_image = getenv("IDLE_IMAGE")
         ? getenv("IDLE_IMAGE")
         : "/tmp/sharescreen-idle.png";
