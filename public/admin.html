@@ -30,8 +30,6 @@
     .btn-reboot:disabled { background: #ccc; cursor: not-allowed; }
     .btn-clear { background: #e0e0e0; color: #333; }
     .btn-clear:hover { background: #d0d0d0; }
-    .btn-remove { background: #d32f2f; color: #fff; }
-    .btn-remove:hover { background: #b71c1c; }
     .btn-setup { background: #1565c0; color: #fff; }
     .btn-setup:hover { background: #0d47a1; }
     .btn-update { background: #7b1fa2; color: #fff; }
@@ -62,11 +60,6 @@
     .update-banner { display: none; background: #ff9800; color: #fff; padding: 12px 20px; border-radius: 10px; margin-bottom: 16px; font-size: 0.9rem; align-items: center; gap: 10px; }
     .update-banner.show { display: flex; }
     .update-banner strong { font-weight: 600; }
-    .add-room { display: flex; gap: 8px; margin-bottom: 20px; }
-    .add-room input { flex: 1; padding: 10px 14px; border: 2px solid #ddd; border-radius: 8px; font-size: 0.95rem; outline: none; }
-    .add-room input:focus { border-color: var(--primary); }
-    .btn-add { background: var(--primary); color: #fff; padding: 10px 20px; border: none; border-radius: 8px; font-size: 0.95rem; font-weight: 500; cursor: pointer; }
-    .btn-add:hover { background: #7a8619; }
     .toast { position: fixed; bottom: 20px; right: 20px; background: var(--dark); color: #fff; padding: 12px 20px; border-radius: 8px; opacity: 0; transition: opacity 0.3s; font-size: 0.9rem; }
     .toast.show { opacity: 1; }
   </style>
@@ -83,10 +76,6 @@
     <div class="device-section" id="device-section" style="display:none">
       <h2>Neue Ger&auml;te</h2>
       <div id="device-list"></div>
-    </div>
-    <div class="add-room">
-      <input type="text" id="new-room-input" placeholder="Neuer Raum (z.B. Sylt)" onkeydown="if(event.key==='Enter')addRoom()">
-      <button class="btn-add" onclick="addRoom()">Raum hinzuf&uuml;gen</button>
     </div>
     <div class="room-grid" id="room-grid"></div>
   </div>
@@ -144,7 +133,6 @@
             <button class="btn btn-update" onclick="updatePi('${room}')" ${info.display ? '' : 'disabled'}>Update Pi</button>
             <button class="btn btn-reboot" onclick="rebootPi('${room}')" ${info.display ? '' : 'disabled'}>Reboot Pi</button>
             <button class="btn btn-clear" onclick="clearIdle('${room}')">Idle neu</button>
-            <button class="btn btn-remove" onclick="removeRoom('${room}')">Entfernen</button>
           </div>
         `;
         grid.appendChild(card);
@@ -208,21 +196,6 @@
       if (!confirm(`Gerät in Raum ${room} zurücksetzen?`)) return;
       socket.emit('admin-reset-device', { room });
       showToast(`Reset für ${room} gesendet`);
-    }
-
-    function addRoom() {
-      const input = document.getElementById('new-room-input');
-      const name = input.value.trim();
-      if (!name) return;
-      socket.emit('admin-add-room', { room: name });
-      input.value = '';
-      showToast(`Raum "${name}" hinzugefügt`);
-    }
-
-    function removeRoom(room) {
-      if (!confirm(`Raum "${room}" wirklich entfernen?`)) return;
-      socket.emit('admin-remove-room', { room });
-      showToast(`Raum "${room}" entfernt`);
     }
 
     function showSetup(room) {
