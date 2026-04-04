@@ -386,8 +386,20 @@ function broadcastAdminStatus() {
   io.to('__admin').emit('admin-devices', deviceList);
 }
 
+// mDNS advertisement for local network discovery
+const { Bonjour } = require('bonjour-service');
+const bonjour = new Bonjour();
+
 server.listen(PORT, () => {
   console.log(`ShareScreen server running on port ${PORT}`);
   console.log(`Rooms: ${ROOMS.join(', ')}`);
   console.log(`Base URL: ${BASE_URL}`);
+
+  bonjour.publish({
+    name: 'ShareScreen',
+    type: 'sharescreen',
+    port: Number(PORT),
+    txt: { url: BASE_URL, version: '1.0' }
+  });
+  console.log(`mDNS: advertising _sharescreen._tcp on port ${PORT}`);
 });
