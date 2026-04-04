@@ -153,9 +153,22 @@ app.get('/:room/share', (req, res) => {
 // Track active sessions per room
 const rooms = {};
 
+// Track unclaimed TV devices waiting for room assignment
+const devices = {}; // { deviceCode: { socketId, name, connectedAt } }
+
 io.on('connection', (socket) => {
   let currentRoom = null;
   let role = null;
+
+  // Device registration — unclaimed TV waiting for room assignment
+  socket.on('register-device', ({ name }) => {
+    const code = String(Math.floor(1000 + Math.random() * 9000));
+    devices[code] = { socketId: socket.id, name: name || 'TV', connectedAt: new Date() };
+    role = 'device';
+    socket.emit('device-registered', { code });
+    console.log(`Device registered: ${name || 'TV'} (code: ${code})`);
+    broadcastAdminStatus();
+  });
 
   socket.on('join', ({ room, type, pin }) => {
     // Sharers and viewers must provide correct PIN
@@ -301,6 +314,31 @@ io.on('connection', (socket) => {
     }
   });
 
+  socket.on('admin-assign-device', ({ code, room }) => {
+    if (role !== 'admin') return;
+    const device = devices[code];
+    if (!device) return;
+    const deviceSocket = io.sockets.sockets.get(device.socketId);
+    if (!deviceSocket) {
+      delete devices[code];
+      broadcastAdminStatus();
+      return;
+    }
+    // Tell the device which room to join
+    deviceSocket.emit('assign-room', { room, server: BASE_URL });
+    delete devices[code];
+    console.log(`Admin: assigned device ${code} to room ${room}`);
+    broadcastAdminStatus();
+  });
+
+  socket.on('admin-reset-device', ({ room }) => {
+    if (role !== 'admin') return;
+    if (rooms[room]?.display) {
+      io.to(rooms[room].display).emit('reset-device');
+      console.log(`Admin: reset device in ${room}`);
+    }
+  });
+
   socket.on('disconnect', () => {
     if (currentRoom && rooms[currentRoom]) {
       if (rooms[currentRoom][role] === socket.id) {
@@ -313,6 +351,12 @@ io.on('connection', (socket) => {
         hasDisplay: !!rooms[currentRoom].display,
         hasSharer: !!rooms[currentRoom].sharer
       });
+    }
+    // Clean up device registrations
+    for (const [code, dev] of Object.entries(devices)) {
+      if (dev.socketId === socket.id) {
+        delete devices[code];
+      }
     }
     broadcastAdminStatus();
   });
@@ -328,7 +372,18 @@ function broadcastAdminStatus() {
       pin: getRoomPin(room),
     };
   }
+  // Include unclaimed devices
+  const deviceList = {};
+  for (const [code, dev] of Object.entries(devices)) {
+    const sock = io.sockets.sockets.get(dev.socketId);
+    if (sock) {
+      deviceList[code] = { name: dev.name, connectedAt: dev.connectedAt };
+    } else {
+      delete devices[code];
+    }
+  }
   io.to('__admin').emit('admin-status', status);
+  io.to('__admin').emit('admin-devices', deviceList);
 }
 
 server.listen(PORT, () => {

@@ -47,6 +47,18 @@
     .btn-copy:hover { background: #7a8619; }
     .btn-close { background: #e0e0e0; color: #333; }
     .btn-close:hover { background: #d0d0d0; }
+    .device-section { margin-bottom: 20px; }
+    .device-section h2 { font-size: 1rem; color: #888; margin-bottom: 10px; }
+    .device-card { background: #fff3e0; border: 1px solid #ffe0b2; border-radius: 10px; padding: 14px 20px; display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+    .device-info { display: flex; flex-direction: column; gap: 4px; }
+    .device-name { font-weight: 600; }
+    .device-code { font-family: 'Courier New', monospace; color: var(--primary); font-weight: 600; font-size: 1.1rem; }
+    .device-actions select { padding: 8px 12px; border: 2px solid #ddd; border-radius: 8px; font-size: 0.85rem; }
+    .device-actions { display: flex; gap: 8px; align-items: center; }
+    .btn-assign { background: #4CAF50; color: #fff; }
+    .btn-assign:hover { background: #388E3C; }
+    .btn-reset-device { background: #d32f2f; color: #fff; }
+    .btn-reset-device:hover { background: #b71c1c; }
     .update-banner { display: none; background: #ff9800; color: #fff; padding: 12px 20px; border-radius: 10px; margin-bottom: 16px; font-size: 0.9rem; align-items: center; gap: 10px; }
     .update-banner.show { display: flex; }
     .update-banner strong { font-weight: 600; }
@@ -67,6 +79,10 @@
   <div class="container">
     <div class="update-banner" id="update-banner">
       <strong>Update verf&uuml;gbar!</strong> <span id="update-info"></span>
+    </div>
+    <div class="device-section" id="device-section" style="display:none">
+      <h2>Neue Ger&auml;te</h2>
+      <div id="device-list"></div>
     </div>
     <div class="add-room">
       <input type="text" id="new-room-input" placeholder="Neuer Raum (z.B. Sylt)" onkeydown="if(event.key==='Enter')addRoom()">
@@ -89,6 +105,7 @@
   <script>
     const socket = io();
     let roomData = {};
+    let deviceData = {};
 
     socket.on('connect', () => {
       socket.emit('join', { room: '__admin', type: 'admin' });
@@ -97,6 +114,11 @@
     socket.on('admin-status', (data) => {
       roomData = data;
       render();
+    });
+
+    socket.on('admin-devices', (data) => {
+      deviceData = data;
+      renderDevices();
     });
 
     socket.on('admin-toast', ({ message }) => {
@@ -144,6 +166,48 @@
     function clearIdle(room) {
       socket.emit('admin-clear-idle', { room });
       showToast(`Idle-Bild für ${room} wird neu generiert`);
+    }
+
+    function renderDevices() {
+      const section = document.getElementById('device-section');
+      const list = document.getElementById('device-list');
+      const codes = Object.keys(deviceData);
+      if (codes.length === 0) {
+        section.style.display = 'none';
+        return;
+      }
+      section.style.display = 'block';
+      list.innerHTML = '';
+      const roomNames = Object.keys(roomData);
+      for (const code of codes) {
+        const dev = deviceData[code];
+        const card = document.createElement('div');
+        card.className = 'device-card';
+        card.innerHTML = `
+          <div class="device-info">
+            <div class="device-name">${dev.name} <span class="device-code">${code}</span></div>
+          </div>
+          <div class="device-actions">
+            <select id="assign-room-${code}">
+              ${roomNames.map(r => `<option value="${r}">${r}</option>`).join('')}
+            </select>
+            <button class="btn btn-assign" onclick="assignDevice('${code}')">Zuweisen</button>
+          </div>
+        `;
+        list.appendChild(card);
+      }
+    }
+
+    function assignDevice(code) {
+      const room = document.getElementById('assign-room-' + code).value;
+      socket.emit('admin-assign-device', { code, room });
+      showToast(`Gerät ${code} → Raum ${room}`);
+    }
+
+    function resetDevice(room) {
+      if (!confirm(`Gerät in Raum ${room} zurücksetzen?`)) return;
+      socket.emit('admin-reset-device', { room });
+      showToast(`Reset für ${room} gesendet`);
     }
 
     function addRoom() {
