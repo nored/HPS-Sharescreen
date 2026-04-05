@@ -6,9 +6,9 @@
 // '0' = open, '2' = ping, '3' = pong, '4' = message
 // Socket.IO on top: '0' = connect, '2' = event, '42' = event (EIO4 + SIO event)
 
-Signaling::Signaling(const std::string& server_url, const std::string& room,
+Signaling::Signaling(const std::string& server_url, const std::string& device_id,
                      const SignalingCallbacks& callbacks)
-    : server_url_(server_url), room_(room), callbacks_(callbacks) {
+    : server_url_(server_url), device_id_(device_id), callbacks_(callbacks) {
     session_ = soup_session_new();
 }
 
@@ -23,9 +23,6 @@ Signaling::~Signaling() {
 }
 
 void Signaling::connect() {
-    // Socket.IO connects via: GET /socket.io/?EIO=4&transport=polling first,
-    // then upgrades to WebSocket. We go direct WebSocket.
-    // First get the sid via polling
     std::string poll_url = server_url_ + "/socket.io/?EIO=4&transport=polling";
 
     auto* msg = soup_message_new("GET", poll_url.c_str());
@@ -43,8 +40,6 @@ void Signaling::connect() {
     gsize size;
     auto* data = (const char*)g_bytes_get_data(body, &size);
 
-    // Response is Engine.IO: "0{...}" — skip the '0' prefix
-    // Find the JSON part
     const char* json_start = strchr(data, '{');
     if (!json_start) {
         fprintf(stderr, "No JSON in polling response — retrying in 5s\n");
@@ -64,9 +59,7 @@ void Signaling::connect() {
     g_bytes_unref(body);
     g_object_unref(msg);
 
-    // Now upgrade to WebSocket
     std::string ws_url = server_url_ + "/socket.io/?EIO=4&transport=websocket&sid=" + sid_;
-    // Replace https:// with wss://
     if (ws_url.substr(0, 8) == "https://")
         ws_url = "wss://" + ws_url.substr(8);
     else if (ws_url.substr(0, 7) == "http://")
@@ -98,7 +91,6 @@ void Signaling::on_ws_connected(GObject* source, GAsyncResult* result, gpointer 
     g_signal_connect(self->ws_, "closed",
                      G_CALLBACK(on_ws_closed_cb), self);
 
-    // Engine.IO: send '2probe' then '5' for upgrade
     soup_websocket_connection_send_text(self->ws_, "2probe");
 }
 
@@ -110,38 +102,40 @@ void Signaling::on_ws_message_cb(SoupWebsocketConnection* conn, gint type,
     std::string msg(data, size);
 
     if (msg == "3probe") {
-        // Upgrade confirmed, send upgrade packet
         soup_websocket_connection_send_text(conn, "5");
-
-        // Now send Socket.IO connect for default namespace
         soup_websocket_connection_send_text(conn, "40");
         return;
     }
 
     if (msg == "2") {
-        // Engine.IO ping, respond with pong
         soup_websocket_connection_send_text(conn, "3");
         return;
     }
 
     if (msg.substr(0, 2) == "40") {
-        // Socket.IO connected to namespace
         printf("Socket.IO connected to namespace\n");
         self->connected_ = true;
 
-        // Join the room as display
-        auto* builder = json_builder_new();
-        json_builder_begin_object(builder);
-        json_builder_set_member_name(builder, "room");
-        json_builder_add_string_value(builder, self->room_.c_str());
-        json_builder_set_member_name(builder, "type");
-        json_builder_add_string_value(builder, "display");
-        json_builder_end_object(builder);
+        if (self->room_.empty()) {
+            // No room assigned yet — register as device
+            auto* builder = json_builder_new();
+            json_builder_begin_object(builder);
+            json_builder_set_member_name(builder, "name");
+            // Use hostname as display name
+            char hostname[64] = "ShareScreen-Pi";
+            gethostname(hostname, sizeof(hostname));
+            json_builder_add_string_value(builder, hostname);
+            json_builder_end_object(builder);
 
-        auto* node = json_builder_get_root(builder);
-        self->send_event("join", node);
-        json_node_unref(node);
-        g_object_unref(builder);
+            auto* node = json_builder_get_root(builder);
+            self->send_event("register-device", node);
+            json_node_unref(node);
+            g_object_unref(builder);
+            printf("Registered as device (waiting for room assignment)\n");
+        } else {
+            // Room already assigned — join as display
+            self->join_room();
+        }
 
         if (self->callbacks_.on_connected)
             self->callbacks_.on_connected();
@@ -166,8 +160,38 @@ void Signaling::on_ws_message_cb(SoupWebsocketConnection* conn, gint type,
     }
 }
 
+void Signaling::join_room() {
+    auto* builder = json_builder_new();
+    json_builder_begin_object(builder);
+    json_builder_set_member_name(builder, "room");
+    json_builder_add_string_value(builder, room_.c_str());
+    json_builder_set_member_name(builder, "type");
+    json_builder_add_string_value(builder, "display");
+    json_builder_end_object(builder);
+
+    auto* node = json_builder_get_root(builder);
+    send_event("join", node);
+    json_node_unref(node);
+    g_object_unref(builder);
+    printf("Joined room %s as display\n", room_.c_str());
+}
+
 void Signaling::handle_event(const std::string& event, JsonNode* data) {
-    if (event == "offer" && data) {
+    if (event == "assign-room" && data) {
+        auto* obj = json_node_get_object(data);
+        auto* room = json_object_get_string_member(obj, "room");
+        printf("Room assigned: %s\n", room);
+        room_ = room;
+        join_room();
+        if (callbacks_.on_room_assigned)
+            callbacks_.on_room_assigned(room);
+    }
+    else if (event == "device-registered" && data) {
+        auto* obj = json_node_get_object(data);
+        auto* code = json_object_get_string_member(obj, "code");
+        printf("Device registered with code: %s\n", code);
+    }
+    else if (event == "offer" && data) {
         auto* obj = json_node_get_object(data);
         auto* offer_obj = json_object_get_object_member(obj, "offer");
         auto* sdp = json_object_get_string_member(offer_obj, "sdp");
@@ -198,16 +222,23 @@ void Signaling::handle_event(const std::string& event, JsonNode* data) {
     }
     else if (event == "refresh-idle") {
         printf("Refresh idle image command received\n");
-        std::string cmd = "curl -sf -o /tmp/sharescreen-idle.png " +
-                          server_url_ + "/" + room_ + "/idle.png";
-        system(cmd.c_str());
-        printf("Idle image re-fetched\n");
-        if (callbacks_.on_sharing_stopped)
-            callbacks_.on_sharing_stopped();
+        if (!room_.empty()) {
+            std::string cmd = "curl -sf -o /tmp/sharescreen-idle.png " +
+                              server_url_ + "/" + room_ + "/idle.png";
+            system(cmd.c_str());
+            printf("Idle image re-fetched\n");
+            if (callbacks_.on_sharing_stopped)
+                callbacks_.on_sharing_stopped();
+        }
     }
     else if (event == "update") {
         printf("Update command received from admin\n");
         system("/usr/local/bin/sharescreen-update.sh");
+    }
+    else if (event == "reset-device") {
+        printf("Reset command received from admin\n");
+        room_ = "";
+        // Will re-register on next connect
     }
     else if (event == "ready") {
         printf("Ready signal received\n");
@@ -233,7 +264,6 @@ void Signaling::send_event(const std::string& event, JsonNode* data) {
     gsize len;
     auto* json_str = json_generator_to_data(gen, &len);
 
-    // Prefix with "42" for Socket.IO event
     std::string packet = "42" + std::string(json_str, len);
     soup_websocket_connection_send_text(ws_, packet.c_str());
 

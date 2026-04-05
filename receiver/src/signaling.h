@@ -12,11 +12,12 @@ struct SignalingCallbacks {
     std::function<void(int mline, const std::string& candidate)> on_ice_candidate;
     std::function<void()> on_sharing_stopped;
     std::function<void()> on_disconnected;
+    std::function<void(const std::string& room)> on_room_assigned;
 };
 
 class Signaling {
 public:
-    Signaling(const std::string& server_url, const std::string& room,
+    Signaling(const std::string& server_url, const std::string& device_id,
               const SignalingCallbacks& callbacks);
     ~Signaling();
 
@@ -25,11 +26,10 @@ public:
     void send_ice_candidate(int mline_index, const std::string& candidate);
 
 private:
-    void on_ws_message(SoupWebsocketConnection* conn, gint type,
-                       GBytes* message);
     void send_event(const std::string& event, JsonNode* data);
     void handle_event(const std::string& event, JsonNode* data);
     void schedule_reconnect();
+    void join_room();
 
     static void on_ws_connected(GObject* source, GAsyncResult* result, gpointer user_data);
     static void on_ws_message_cb(SoupWebsocketConnection* conn, gint type,
@@ -37,6 +37,7 @@ private:
     static void on_ws_closed_cb(SoupWebsocketConnection* conn, gpointer user_data);
 
     std::string server_url_;
+    std::string device_id_;
     std::string room_;
     SignalingCallbacks callbacks_;
     SoupSession* session_ = nullptr;
