@@ -34,6 +34,22 @@ function saveRooms(rooms) {
 }
 let ROOMS = loadRooms();
 
+// Persistent device-name → room bindings, so a paired Pi auto-rejoins
+// its room across reboots without needing to be re-paired by an admin.
+const DEVICE_BINDINGS_FILE = path.join(__dirname, 'data', 'device-bindings.json');
+function loadDeviceBindings() {
+  try {
+    return JSON.parse(fs.readFileSync(DEVICE_BINDINGS_FILE, 'utf8'));
+  } catch {
+    return {};
+  }
+}
+function saveDeviceBindings(bindings) {
+  fs.mkdirSync(path.dirname(DEVICE_BINDINGS_FILE), { recursive: true });
+  fs.writeFileSync(DEVICE_BINDINGS_FILE, JSON.stringify(bindings, null, 2));
+}
+let deviceBindings = loadDeviceBindings();
+
 const PIN_SECRET = process.env.PIN_SECRET || 'hps-sharescreen-2024';
 
 // Generate a 4-digit PIN that rotates daily per room
@@ -162,11 +178,23 @@ io.on('connection', (socket) => {
 
   // Device registration — unclaimed TV waiting for room assignment
   socket.on('register-device', ({ name }) => {
-    const code = String(Math.floor(1000 + Math.random() * 9000));
-    devices[code] = { socketId: socket.id, name: name || 'TV', connectedAt: new Date() };
+    const deviceName = name || 'TV';
     role = 'device';
+
+    // If this device name has a remembered room binding AND that room
+    // still exists, auto-assign without requiring an admin pair.
+    const boundRoom = deviceBindings[deviceName];
+    if (boundRoom && ROOMS.includes(boundRoom)) {
+      socket.emit('assign-room', { room: boundRoom, server: BASE_URL });
+      console.log(`Device ${deviceName} auto-assigned to remembered room ${boundRoom}`);
+      broadcastAdminStatus();
+      return;
+    }
+
+    const code = String(Math.floor(1000 + Math.random() * 9000));
+    devices[code] = { socketId: socket.id, name: deviceName, connectedAt: new Date() };
     socket.emit('device-registered', { code });
-    console.log(`Device registered: ${name || 'TV'} (code: ${code})`);
+    console.log(`Device registered: ${deviceName} (code: ${code})`);
     broadcastAdminStatus();
   });
 
@@ -326,9 +354,22 @@ io.on('connection', (socket) => {
     }
     // Tell the device which room to join
     deviceSocket.emit('assign-room', { room, server: BASE_URL });
+    // Remember this device → room so it auto-rejoins on reboot
+    deviceBindings[device.name] = room;
+    saveDeviceBindings(deviceBindings);
     delete devices[code];
-    console.log(`Admin: assigned device ${code} to room ${room}`);
+    console.log(`Admin: assigned device ${device.name} (code ${code}) to room ${room} [persisted]`);
     broadcastAdminStatus();
+  });
+
+  socket.on('admin-unbind-device', ({ name }) => {
+    if (role !== 'admin') return;
+    if (deviceBindings[name]) {
+      delete deviceBindings[name];
+      saveDeviceBindings(deviceBindings);
+      console.log(`Admin: unbound device ${name}`);
+      broadcastAdminStatus();
+    }
   });
 
   socket.on('admin-reset-device', ({ room }) => {
@@ -384,6 +425,7 @@ function broadcastAdminStatus() {
   }
   io.to('__admin').emit('admin-status', status);
   io.to('__admin').emit('admin-devices', deviceList);
+  io.to('__admin').emit('admin-device-bindings', deviceBindings);
 }
 
 // mDNS advertisement for local network discovery
