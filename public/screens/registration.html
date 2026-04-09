@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Register device</title>
+<script src="https://cdn.jsdelivr.net/npm/qrious@4.0.2/dist/qrious.min.js"></script>
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: #111;
+    color: #eee;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    width: 1280px;
+    height: 720px;
+    overflow: hidden;
+  }
+  .frame {
+    box-sizing: border-box;
+    width: 1280px;
+    height: 720px;
+    padding: 50px 80px;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 60px;
+  }
+  .qr-wrap {
+    background: #fff;
+    border-radius: 18px;
+    padding: 24px;
+    flex: 0 0 auto;
+  }
+  .qr-wrap canvas { display: block; width: 380px; height: 380px; }
+  .right { flex: 1; }
+  h1 {
+    font-size: 56px;
+    margin: 0 0 12px;
+    line-height: 1.05;
+  }
+  p.lead {
+    font-size: 22px;
+    color: #bbb;
+    margin: 0 0 28px;
+    line-height: 1.4;
+  }
+  .id {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 30px;
+    background: #222;
+    border: 1px solid #333;
+    border-radius: 10px;
+    padding: 14px 18px;
+    display: inline-block;
+    letter-spacing: 0.04em;
+    margin: 0 0 24px;
+  }
+  .status {
+    font-size: 22px;
+    color: #ffa94d;
+  }
+  .footer {
+    position: absolute;
+    bottom: 30px;
+    left: 80px;
+    right: 80px;
+    color: #666;
+    font-size: 16px;
+  }
+</style>
+</head>
+<body>
+  <div class="frame">
+    <div class="qr-wrap"><canvas id="qr-canvas"></canvas></div>
+    <div class="right">
+      <h1>Register device</h1>
+      <p class="lead">Scan the QR with your phone — your mail app will open with a pre-filled registration request.</p>
+      <div class="id" id="device-id">…</div>
+      <div class="status" id="status">…</div>
+    </div>
+  </div>
+  <div class="footer">ShareScreen receiver — share.hotel-park-soltau.de</div>
+
+  <script>
+    const params = new URLSearchParams(location.search);
+    const deviceId = params.get('id') || 'unknown';
+    const status   = params.get('status') || '';
+    document.getElementById('device-id').textContent = deviceId;
+    document.getElementById('status').textContent = status;
+
+    const subject = encodeURIComponent('ShareScreen Pi Registration');
+    const body = encodeURIComponent(
+      'Please register the following ShareScreen receiver:\n\n' +
+      'Device ID: ' + deviceId + '\n'
+    );
+    const mailto = `mailto:${window.REGISTRATION_EMAIL || 'mail@klausschwarz.net'}?subject=${subject}&body=${body}`;
+
+    new QRious({
+      element: document.getElementById('qr-canvas'),
+      value: mailto,
+      size: 380,
+      level: 'M',
+      foreground: '#111',
+      background: '#fff',
+    });
+  </script>
+</body>
+</html>

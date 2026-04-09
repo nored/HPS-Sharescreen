@@ -93,6 +93,28 @@ app.get('/api/ice-config', (req, res) => {
 
 // Idle screen image for C++ receiver — rendered on first request, then cached
 const { renderIdleImage } = require('./idle-image');
+const { renderRegistrationImage } = require('./registration-image');
+
+// Static HTML page that the puppeteer renderer loads — also reachable
+// directly in a browser for debugging.
+app.get('/screens/registration', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'screens', 'registration.html'));
+});
+
+// PNG snapshot of the above (Pi receiver downloads this).
+app.get('/screens/registration.png', async (req, res) => {
+  const deviceId = String(req.query.id || 'unknown');
+  const status   = String(req.query.status || 'default');
+  try {
+    const png = await renderRegistrationImage(deviceId, status);
+    res.set('Content-Type', 'image/png');
+    res.set('Cache-Control', 'no-store');
+    res.send(png);
+  } catch (err) {
+    console.error('registration.png render failed:', err.message);
+    res.status(503).send('render failed');
+  }
+});
 
 app.get('/:room/idle.png', async (req, res) => {
   const room = req.params.room;
