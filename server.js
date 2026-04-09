@@ -428,6 +428,34 @@ function broadcastAdminStatus() {
   io.to('__admin').emit('admin-device-bindings', deviceBindings);
 }
 
+// At midnight (when getRoomPin rotates), invalidate every cached idle.png
+// and tell every paired display to re-fetch its idle image so the new
+// daily PIN is rendered.
+function refreshAllIdles(reason) {
+  for (const room of ROOMS) {
+    const cacheFile = path.join(__dirname, 'public', 'idle', `${room}.png`);
+    try { fs.unlinkSync(cacheFile); } catch {}
+    if (rooms[room]?.display) {
+      io.to(rooms[room].display).emit('refresh-idle');
+    }
+  }
+  console.log(`refreshAllIdles: ${reason}`);
+}
+
+function scheduleMidnightRefresh() {
+  const now = new Date();
+  const nextMidnight = new Date(
+    now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 5
+  );
+  const ms = nextMidnight.getTime() - now.getTime();
+  setTimeout(() => {
+    refreshAllIdles('daily PIN rotation');
+    scheduleMidnightRefresh();
+  }, ms);
+  console.log(`Next idle refresh scheduled in ${(ms / 60000).toFixed(1)} min`);
+}
+scheduleMidnightRefresh();
+
 // mDNS advertisement for local network discovery
 const { Bonjour } = require('bonjour-service');
 const bonjour = new Bonjour();
