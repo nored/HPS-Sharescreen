@@ -242,6 +242,19 @@ io.on('connection', (socket) => {
       }
     }
 
+    // Switching rooms (live reassignment): free the old room's slot so it
+    // doesn't keep receiving offers meant for someone else.
+    if (currentRoom && currentRoom !== room) {
+      socket.leave(currentRoom);
+      if (rooms[currentRoom]?.[role] === socket.id) {
+        rooms[currentRoom][role] = null;
+        io.to(currentRoom).emit('room-status', {
+          hasDisplay: !!rooms[currentRoom].display,
+          hasSharer: !!rooms[currentRoom].sharer
+        });
+      }
+    }
+
     currentRoom = room;
     role = type;
     socket.join(room);
@@ -389,6 +402,28 @@ io.on('connection', (socket) => {
     saveDeviceBindings(deviceBindings);
     delete devices[code];
     console.log(`Admin: assigned device ${device.name} (code ${code}) to room ${roomName} [persisted]`);
+    broadcastAdminStatus();
+  });
+
+  // Move an already-bound device to another room — no unbind/re-pair cycle.
+  // If the device is online as its old room's display, it switches live.
+  socket.on('admin-reassign-device', ({ name, room }) => {
+    if (role !== 'admin') return;
+    const roomName = room?.trim();
+    if (!name || !roomName || !deviceBindings[name]) return;
+    const oldRoom = deviceBindings[name];
+    if (roomName === oldRoom) return;
+    if (!ROOMS.includes(roomName)) {
+      ROOMS.push(roomName);
+      saveRooms(ROOMS);
+      console.log(`Admin: room ${roomName} created via device reassignment`);
+    }
+    deviceBindings[name] = roomName;
+    saveDeviceBindings(deviceBindings);
+    const sockId = rooms[oldRoom]?.display;
+    const devSock = sockId ? io.sockets.sockets.get(sockId) : null;
+    if (devSock) devSock.emit('assign-room', { room: roomName, server: BASE_URL });
+    console.log(`Admin: reassigned device ${name} ${oldRoom} → ${roomName}${devSock ? ' [live]' : ' [applies on reconnect]'}`);
     broadcastAdminStatus();
   });
 

@@ -77,6 +77,10 @@
       <h2>Neue Ger&auml;te</h2>
       <div id="device-list"></div>
     </div>
+    <div class="device-section" id="binding-section" style="display:none">
+      <h2>Zugewiesene Ger&auml;te</h2>
+      <div id="binding-list"></div>
+    </div>
     <div class="room-grid" id="room-grid"></div>
   </div>
   <div class="modal-overlay" id="setup-modal" onclick="if(event.target===this)closeSetup()">
@@ -95,6 +99,7 @@
     const socket = io();
     let roomData = {};
     let deviceData = {};
+    let bindingData = {};
 
     socket.on('connect', () => {
       socket.emit('join', { room: '__admin', type: 'admin' });
@@ -108,6 +113,11 @@
     socket.on('admin-devices', (data) => {
       deviceData = data;
       renderDevices();
+    });
+
+    socket.on('admin-device-bindings', (data) => {
+      bindingData = data;
+      renderBindings();
     });
 
     socket.on('admin-toast', ({ message }) => {
@@ -193,6 +203,58 @@
       const input = document.getElementById('assign-new-room-' + code);
       input.style.display = sel.value === '__new__' ? '' : 'none';
       if (sel.value === '__new__') input.focus();
+    }
+
+    function renderBindings() {
+      const section = document.getElementById('binding-section');
+      const list = document.getElementById('binding-list');
+      const names = Object.keys(bindingData);
+      if (names.length === 0) {
+        section.style.display = 'none';
+        return;
+      }
+      section.style.display = 'block';
+      list.innerHTML = '';
+      const roomNames = Object.keys(roomData);
+      let i = 0;
+      for (const name of names) {
+        const boundRoom = bindingData[name];
+        const id = 'b' + (i++);
+        const card = document.createElement('div');
+        card.className = 'device-card';
+        card.innerHTML = `
+          <div class="device-info">
+            <div class="device-name">${name}</div>
+          </div>
+          <div class="device-actions">
+            <select id="assign-room-${id}" onchange="toggleNewRoom('${id}')">
+              ${roomNames.map(r => `<option value="${r}"${r === boundRoom ? ' selected' : ''}>${r}</option>`).join('')}
+              ${roomNames.includes(boundRoom) ? '' : `<option value="${boundRoom}" selected>${boundRoom}</option>`}
+              <option value="__new__">+ Neuer Raum…</option>
+            </select>
+            <input id="assign-new-room-${id}" type="text" placeholder="Raumname" style="display:none">
+            <button class="btn btn-assign" onclick="reassignDevice('${name}', '${id}')">&Auml;ndern</button>
+            <button class="btn btn-reset-device" onclick="unbindDevice('${name}')">Trennen</button>
+          </div>
+        `;
+        list.appendChild(card);
+      }
+    }
+
+    function reassignDevice(name, id) {
+      let room = document.getElementById('assign-room-' + id).value;
+      if (room === '__new__') {
+        room = document.getElementById('assign-new-room-' + id).value.trim();
+        if (!room) { showToast('Bitte Raumnamen eingeben'); return; }
+      }
+      socket.emit('admin-reassign-device', { name, room });
+      showToast(`${name} → Raum ${room}`);
+    }
+
+    function unbindDevice(name) {
+      if (!confirm(`Bindung von ${name} lösen? Das Gerät meldet sich nach dem nächsten Neustart als neues Gerät.`)) return;
+      socket.emit('admin-unbind-device', { name });
+      showToast(`Bindung von ${name} gelöst`);
     }
 
     function assignDevice(code) {
