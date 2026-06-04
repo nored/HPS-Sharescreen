@@ -368,19 +368,27 @@ io.on('connection', (socket) => {
     if (role !== 'admin') return;
     const device = devices[code];
     if (!device) return;
+    const roomName = room?.trim();
+    if (!roomName) return;
     const deviceSocket = io.sockets.sockets.get(device.socketId);
     if (!deviceSocket) {
       delete devices[code];
       broadcastAdminStatus();
       return;
     }
+    // Assigning to an unknown room creates it — no separate add-room step.
+    if (!ROOMS.includes(roomName)) {
+      ROOMS.push(roomName);
+      saveRooms(ROOMS);
+      console.log(`Admin: room ${roomName} created via device assignment`);
+    }
     // Tell the device which room to join
-    deviceSocket.emit('assign-room', { room, server: BASE_URL });
+    deviceSocket.emit('assign-room', { room: roomName, server: BASE_URL });
     // Remember this device → room so it auto-rejoins on reboot
-    deviceBindings[device.name] = room;
+    deviceBindings[device.name] = roomName;
     saveDeviceBindings(deviceBindings);
     delete devices[code];
-    console.log(`Admin: assigned device ${device.name} (code ${code}) to room ${room} [persisted]`);
+    console.log(`Admin: assigned device ${device.name} (code ${code}) to room ${roomName} [persisted]`);
     broadcastAdminStatus();
   });
 

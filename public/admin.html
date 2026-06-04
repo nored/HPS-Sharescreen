@@ -51,7 +51,7 @@
     .device-info { display: flex; flex-direction: column; gap: 4px; }
     .device-name { font-weight: 600; }
     .device-code { font-family: 'Courier New', monospace; color: var(--primary); font-weight: 600; font-size: 1.1rem; }
-    .device-actions select { padding: 8px 12px; border: 2px solid #ddd; border-radius: 8px; font-size: 0.85rem; }
+    .device-actions select, .device-actions input { padding: 8px 12px; border: 2px solid #ddd; border-radius: 8px; font-size: 0.85rem; }
     .device-actions { display: flex; gap: 8px; align-items: center; }
     .btn-assign { background: #4CAF50; color: #fff; }
     .btn-assign:hover { background: #388E3C; }
@@ -176,9 +176,11 @@
             <div class="device-name">${dev.name} <span class="device-code">${code}</span></div>
           </div>
           <div class="device-actions">
-            <select id="assign-room-${code}">
+            <select id="assign-room-${code}" onchange="toggleNewRoom('${code}')">
               ${roomNames.map(r => `<option value="${r}">${r}</option>`).join('')}
+              <option value="__new__">+ Neuer Raum…</option>
             </select>
+            <input id="assign-new-room-${code}" type="text" placeholder="Raumname" style="display:none">
             <button class="btn btn-assign" onclick="assignDevice('${code}')">Zuweisen</button>
           </div>
         `;
@@ -186,8 +188,19 @@
       }
     }
 
+    function toggleNewRoom(code) {
+      const sel = document.getElementById('assign-room-' + code);
+      const input = document.getElementById('assign-new-room-' + code);
+      input.style.display = sel.value === '__new__' ? '' : 'none';
+      if (sel.value === '__new__') input.focus();
+    }
+
     function assignDevice(code) {
-      const room = document.getElementById('assign-room-' + code).value;
+      let room = document.getElementById('assign-room-' + code).value;
+      if (room === '__new__') {
+        room = document.getElementById('assign-new-room-' + code).value.trim();
+        if (!room) { showToast('Bitte Raumnamen eingeben'); return; }
+      }
       socket.emit('admin-assign-device', { code, room });
       showToast(`Gerät ${code} → Raum ${room}`);
     }
